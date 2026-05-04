@@ -1,0 +1,15 @@
+extends: existence
+message: "'%s' is a high-frequency LLM tell; rephrase with a plainer alternative."
+level: warning
+ignorecase: true
+tokens:
+  - delve
+  - leverage
+  - multifaceted
+  - tapestry
+  - navigate
+  - intricate
+  - holistic
+  - paradigm
+  - embark
+  - endeavor

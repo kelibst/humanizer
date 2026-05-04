@@ -1,0 +1,6 @@
+extends: existence
+message: "Three-item list ('X, Y, and Z') is one of the most detectable AI patterns; vary to two or four items, or rephrase without a list."
+level: suggestion
+nonword: true
+raw:
+  - '\b\w+,\s+\w+,\s+and\s+\w+\b'

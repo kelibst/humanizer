@@ -1,0 +1,108 @@
+schema_version: 1
+profile_name: default_ghanaian
+extracted_from: []
+extracted_at: 2026-05-04
+word_count_basis: 0
+
+domain_register: academic
+dialect: ghanaian
+seed: 1337
+
+sentence_shape:
+  mean_words: 19.0
+  std_words: 11.0
+  pct_short_lt10: 0.18
+  pct_long_gt35: 0.09
+  max_consecutive_similar: 2
+
+punctuation_per_1000w:
+  em_dash:
+    target: 0.0
+    hard_cap: 0.0
+  semicolon:
+    target: 0.5
+    hard_cap: 2.0
+  colon:
+    target: 4.5
+  parenthesis:
+    target: 6.0
+  comma:
+    target: 55.0
+
+vocabulary:
+  must_use: []
+  never_use:
+    - delve
+    - tapestry
+    - leverage
+    - navigate
+    - multifaceted
+    - intricate
+    - holistic
+    - paradigm
+    - in conclusion
+    - to summarize
+    - it is worth noting
+  preferred_swaps:
+    delve: [examine, look at, go into]
+    leverage: [use, draw on, rely on]
+    navigate: [work through, deal with, get round]
+    foster: [build, encourage, support]
+    intricate: [complicated, layered]
+    multifaceted: [many-sided, complex]
+    ensure: [make sure, see to it that]
+    holistic: [overall, whole-of-system]
+    underscore: [highlight, point to]
+    elucidate: [explain, make clear]
+    illuminate: [explain, shed light on]
+    streamline: [simplify, tidy up]
+  repetition_tolerance: high
+
+connectors_per_1000w:
+  as such: 3.5
+  however: 2.0
+  and so: 1.2
+  thus: 0.8
+
+blupper_probabilities:
+  comma_splice_rate: 0.15
+  data_singular_verb: 0.70
+  less_for_fewer: 0.20
+  which_for_that: 0.30
+  oxford_comma_rate: 0.55
+  start_with_and_but: 0.08
+  article_drop_ghanaian: 0.12
+  tense_shift_past_present: 0.10
+
+hedge_mix:
+  formal_share: 0.55
+  informal_share: 0.45
+  formal_pool: [may, might, could, suggests, appears to]
+  informal_pool:
+    - seems like
+    - looks like
+    - hard to say with certainty
+    - one would think
+    - it is not clear whether
+
+paragraph_shape:
+  topic_sentence_perfection_max: 0.40
+  thinking_marker_rate: 0.15
+  thinking_markers:
+    - "Interestingly,"
+    - "What stands out here is that"
+    - "This raises an important question:"
+    - "Looking at the data above,"
+    - "From the table, it is clear that"
+    - "Of course, this does not mean that"
+  length_cv_min: 0.45
+
+forbidden_openers:
+  - "In conclusion"
+  - "To summarize"
+  - "It is worth noting"
+  - "Furthermore,"
+  - "Additionally,"
+  - "Moreover,"
+
+risk_target: 0.35

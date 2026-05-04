@@ -1,0 +1,13 @@
+extends: existence
+message: "Paragraph opener '%s' reads as LLM boilerplate; rephrase."
+level: warning
+scope: paragraph
+raw:
+  - '(?m)^\s*('
+tokens:
+  - 'In conclusion'
+  - 'To summarize'
+  - 'Furthermore,'
+  - 'Additionally,'
+  - 'Moreover,'
+  - 'It is worth noting'
