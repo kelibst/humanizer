@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import date
 from pathlib import Path
-from typing import Literal
+from typing import Any, Literal
 
 import yaml
 from pydantic import BaseModel, ConfigDict, Field, field_validator
@@ -92,6 +92,13 @@ class Profile(BaseModel):
     domain_register: Register = "academic"
     dialect: Dialect = "neutral"
     seed: int = 1337
+
+    # v1.2 — backend selection. ``backend_config`` is intentionally loose-shape
+    # (see plan/BACKEND_CONTRACT.md §5) so users can drop in
+    # ``{"model": "claude-haiku-4-5"}`` or ``{"host": "..."}`` without a schema
+    # migration. Per-backend keys are documented in the contract.
+    backend: Literal["ollama", "anthropic", "openai", "gemini"] = "ollama"
+    backend_config: dict[str, Any] = Field(default_factory=dict)
 
     sentence_shape: SentenceShape = Field(default_factory=SentenceShape)
     punctuation_per_1000w: dict[str, PunctTarget] = Field(

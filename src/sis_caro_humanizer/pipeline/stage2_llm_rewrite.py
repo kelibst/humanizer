@@ -1,32 +1,21 @@
-"""Stage 2: LLM rewrite via Ollama.
+"""Stage 2: LLM rewrite via the configured backend.
 
-The model gets a profile-derived system prompt and the input text wrapped in
-``<text>...</text>`` tags so it is less likely to add commentary. Any chatty
-preface or apology is stripped from the response.
+Historically this stage spoke directly to Ollama. v1.2 rewires it through the
+multi-backend registry (``sis_caro_humanizer.backends``) so the same call site
+works against Ollama, Anthropic, OpenAI, or Gemini, selected via
+``profile.backend`` / ``profile.backend_config``.
+
+For runner compatibility the legacy ``OllamaUnavailable`` exception name is
+preserved: any :class:`backends.BackendUnavailable` is wrapped in it before
+bubbling up. ``pipeline/runner.py`` already catches ``OllamaUnavailable`` and
+downgrades, so no runner edit is needed.
 """
 from __future__ import annotations
 
-import re
-
+from ..backends import BackendError, BackendUnavailable, clean_output, get_backend
 from ..config import DEFAULT_MODEL
-from ..ollama_client import OllamaUnavailable, generate
+from ..ollama_client import OllamaUnavailable
 from ..profile.schema import Profile
-
-_LEADING_CHATTER = re.compile(
-    r"^\s*(?:here(?:'s| is)\s+(?:the\s+)?(?:rewrit|edit|revis|updat)[^\n:]*?:\s*"
-    r"|sure[!,.]?\s+(?:here[^\n]*:\s*)?"
-    r"|certainly[!,.]?\s+(?:here[^\n]*:\s*)?"
-    r"|of course[!,.]?\s+(?:here[^\n]*:\s*)?"
-    r"|okay[!,.]?\s+(?:here[^\n]*:\s*)?"
-    r"|here you go[!,.]?\s*"
-    r")",
-    re.IGNORECASE,
-)
-_TRAILING_APOLOGY = re.compile(
-    r"\n+\s*(?:i\s+hope\s+this\s+helps|let\s+me\s+know|hope\s+that\s+helps)[^\n]*$",
-    re.IGNORECASE,
-)
-_TEXT_TAG = re.compile(r"<\s*/?\s*text[^>]*>", re.IGNORECASE)
 
 
 def _build_system_prompt(profile: Profile) -> str:
@@ -92,18 +81,12 @@ def _build_system_prompt(profile: Profile) -> str:
 
 
 def _strip_chatter(reply: str) -> str:
-    out = reply.strip()
-    # Strip a single leading/trailing fenced block if the model wrapped output.
-    if out.startswith("```"):
-        first_nl = out.find("\n")
-        if first_nl != -1:
-            out = out[first_nl + 1 :]
-        if out.endswith("```"):
-            out = out[: -3]
-    out = _LEADING_CHATTER.sub("", out, count=1)
-    out = _TRAILING_APOLOGY.sub("", out)
-    out = _TEXT_TAG.sub("", out)
-    return out.strip()
+    """Backwards-compat re-export.
+
+    Older tests / external callers imported ``_strip_chatter`` from this
+    module. The implementation now lives in :func:`backends.base.clean_output`.
+    """
+    return clean_output(reply)
 
 
 def llm_rewrite(
@@ -114,26 +97,56 @@ def llm_rewrite(
     host: str | None = None,
     timeout: float = 600.0,
 ) -> str:
-    """Rewrite ``text`` to match ``profile``. Raises :class:`OllamaUnavailable`."""
+    """Rewrite ``text`` to match ``profile``.
+
+    Routes through the backend named by ``profile.backend``. Raises
+    :class:`OllamaUnavailable` (the legacy name) for any unreachable provider so
+    ``pipeline/runner.py``'s existing catch behaviour continues to work without
+    edits.
+    """
     if not text.strip():
         return text
 
+    config = dict(profile.backend_config)
+    # Allow the CLI's ``--host`` flag to override the Ollama host without
+    # editing the profile YAML.
+    if host and profile.backend == "ollama" and "host" not in config:
+        config["host"] = host
+
+    try:
+        backend = get_backend(profile.backend, config=config)
+    except ValueError as exc:
+        # Misconfigured profile — surface as unavailable so the runner downgrades.
+        raise OllamaUnavailable(f"unknown backend {profile.backend!r}: {exc}") from exc
+
+    if not backend.is_available():
+        raise OllamaUnavailable(
+            f"backend {profile.backend!r} not available "
+            "(API key missing or daemon down)"
+        )
+
     system = _build_system_prompt(profile)
-    user_prompt = f"<text>\n{text}\n</text>"
+    chosen_model = model or config.get("model") or (
+        DEFAULT_MODEL if profile.backend == "ollama" else None
+    )
 
-    chosen_model = model or DEFAULT_MODEL
-    kwargs: dict = {
-        "model": chosen_model,
-        "system": system,
-        "timeout": timeout,
-        "options": {"temperature": 0.7, "top_p": 0.9},
-    }
-    if host:
-        kwargs["host"] = host
+    try:
+        rewritten = backend.rewrite(
+            text,
+            system=system,
+            model=chosen_model,
+            timeout=timeout,
+        )
+    except BackendUnavailable as exc:
+        raise OllamaUnavailable(str(exc)) from exc
+    except BackendError as exc:
+        # The runner only knows about OllamaUnavailable; widen the error so a
+        # billed-but-failed call still downgrades cleanly.
+        raise OllamaUnavailable(f"{profile.backend} error: {exc}") from exc
 
-    reply = generate(user_prompt, **kwargs)
-    cleaned = _strip_chatter(reply)
-    if not cleaned:
-        # Model produced only chatter; treat as failure so the runner can downgrade.
+    if not rewritten:
         raise OllamaUnavailable("LLM returned empty rewrite after stripping chatter")
-    return cleaned
+    return rewritten
+
+
+__all__ = ["llm_rewrite"]

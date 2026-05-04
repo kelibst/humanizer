@@ -1,0 +1,121 @@
+schema_version: 1
+profile_name: krieger
+extracted_from:
+- krieger_corpus.md
+extracted_at: '2026-05-04'
+word_count_basis: 33408
+domain_register: academic
+dialect: american
+seed: 1337
+backend: ollama
+backend_config: {}
+sentence_shape:
+  mean_words: 34.2
+  std_words: 28.9
+  pct_short_lt10: 0.173
+  pct_long_gt35: 0.387
+  max_consecutive_similar: 2
+punctuation_per_1000w:
+  em_dash:
+    target: 10.12
+    hard_cap: 0.0
+  semicolon:
+    target: 7.39
+    hard_cap: 2.0
+  colon:
+    target: 6.17
+  parenthesis:
+    target: 26.73
+  comma:
+    target: 86.45
+vocabulary:
+  must_use:
+  - health
+  - with
+  - data
+  - political
+  - that
+  - were
+  - state
+  - from
+  never_use:
+  - delve
+  - tapestry
+  - leverage
+  - navigate
+  - multifaceted
+  - in conclusion
+  - to summarize
+  - it is worth noting
+  preferred_swaps:
+    delve:
+    - examine
+    - look at
+    - go into
+    leverage:
+    - use
+    - draw on
+    navigate:
+    - work through
+    - deal with
+    foster:
+    - build
+    - encourage
+    intricate:
+    - complicated
+    - layered
+    ensure:
+    - make sure
+    - see to it that
+  repetition_tolerance: high
+connectors_per_1000w:
+  as such: 0.06
+  however: 0.78
+  moreover: 0.24
+  and so: 0.03
+  thus: 0.57
+  therefore: 0.03
+  additionally: 0.54
+  nevertheless: 0.06
+blupper_probabilities:
+  comma_splice_rate: 0.15
+  data_singular_verb: 0.5
+  less_for_fewer: 0.2
+  which_for_that: 0.3
+  oxford_comma_rate: 0.55
+  start_with_and_but: 0.08
+  article_drop_ghanaian: 0.12
+  tense_shift_past_present: 0.1
+hedge_mix:
+  formal_share: 0.98
+  informal_share: 0.0
+  formal_pool:
+  - may
+  - might
+  - could
+  - suggests
+  - appears to
+  informal_pool:
+  - seems like
+  - looks like
+  - hard to say with certainty
+  - one would think
+paragraph_shape:
+  topic_sentence_perfection_max: 0.4
+  thinking_marker_rate: 0.15
+  thinking_markers:
+  - Interestingly,
+  - What stands out here is that
+  - 'This raises an important question:'
+  - Looking at the data above,
+  - From the table, it is clear that
+  - Of course, this does not mean that
+  length_cv_min: 0.93
+forbidden_openers:
+- In conclusion
+- To summarize
+- It is worth noting
+- Furthermore,
+- Additionally,
+- Moreover,
+risk_target: 0.35

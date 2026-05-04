@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <base target="_top">
+  <meta charset="utf-8">
+  <style><?!= include('sidebar.css') ?></style>
+  <style>
+    body { padding: 16px; }
+    .hz-form-row {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      margin-bottom: 12px;
+    }
+    .hz-form-row label {
+      font-size: 12px;
+      font-weight: 500;
+      color: var(--hz-fg);
+    }
+    .hz-form-row .hz-help {
+      font-size: 11px;
+      color: var(--hz-muted);
+    }
+    .hz-form-row input,
+    .hz-form-row select {
+      padding: 6px 8px;
+      border: 1px solid var(--hz-line);
+      border-radius: var(--hz-radius);
+      font-size: 13px;
+      font-family: inherit;
+      background: #fff;
+      color: var(--hz-fg);
+    }
+    .hz-form-row input:focus,
+    .hz-form-row select:focus {
+      outline: 2px solid var(--hz-accent);
+      outline-offset: -1px;
+      border-color: var(--hz-accent);
+    }
+    .hz-form-actions {
+      display: flex;
+      justify-content: flex-end;
+      gap: 8px;
+      margin-top: 8px;
+    }
+    .hz-toast {
+      margin-top: 8px;
+      padding: 6px 8px;
+      border-radius: var(--hz-radius);
+      font-size: 12px;
+    }
+    .hz-toast--ok   { background: #e6f4ea; color: var(--hz-ok); }
+    .hz-toast--warn { background: #fef7e0; color: #b06000; }
+    .hz-toast--err  { background: #fce8e6; color: var(--hz-err); }
+    .hz-toast--info { background: #f8f9fa; color: var(--hz-muted); }
+  </style>
+</head>
+<body>
+  <div class="hz-app">
+    <header class="hz-header">
+      <div class="hz-title">Humanizer settings</div>
+    </header>
+
+    <form id="hz-settings-form">
+      <div class="hz-form-row">
+        <label for="hz-baseUrl">Bridge base URL</label>
+        <input type="text" id="hz-baseUrl" name="baseUrl"
+               placeholder="https://localhost:9999"
+               autocomplete="off" spellcheck="false">
+        <div class="hz-help">Default <code>https://localhost:9999</code>. Visit this URL once in the browser to accept the self-signed cert.</div>
+      </div>
+
+      <div class="hz-form-row">
+        <label for="hz-token">Bearer token</label>
+        <input type="password" id="hz-token" name="token"
+               placeholder="copy from `humanize serve` startup banner"
+               autocomplete="off" spellcheck="false">
+        <div class="hz-help">Printed by <code>humanize serve</code>. Persisted at <code>~/.config/humanizer/serve/token</code>.</div>
+      </div>
+
+      <div class="hz-form-row">
+        <label for="hz-profile">Profile</label>
+        <select id="hz-profile" name="profile">
+          <option value="default_ghanaian">default_ghanaian (loading…)</option>
+        </select>
+        <div class="hz-help">Populated from <code>GET /v1/profiles</code> after URL + token are set.</div>
+      </div>
+
+      <div class="hz-form-row">
+        <label for="hz-backend">Backend</label>
+        <select id="hz-backend" name="backend">
+          <option value="ollama">ollama</option>
+          <option value="anthropic">anthropic</option>
+          <option value="openai">openai</option>
+          <option value="gemini">gemini</option>
+        </select>
+        <div class="hz-help">Override the profile's default backend for the LLM rewrite stage.</div>
+      </div>
+
+      <div class="hz-form-row">
+        <label for="hz-model">Model (optional)</label>
+        <input type="text" id="hz-model" name="model"
+               placeholder="gemma3:4b / claude-sonnet-4-6 / gpt-5-mini / gemini-2.0-flash"
+               autocomplete="off" spellcheck="false">
+        <div class="hz-help">Leave blank to use the backend's default model.</div>
+      </div>
+
+      <div id="hz-toast" class="hz-toast hz-toast--info hz-hidden"></div>
+
+      <div class="hz-form-actions">
+        <button type="button" id="hz-cancel-btn" class="hz-btn hz-btn--secondary">Cancel</button>
+        <button type="submit" id="hz-save-btn" class="hz-btn hz-btn--primary">Save</button>
+      </div>
+    </form>
+  </div>
+
+  <script><?!= include('settings.js') ?></script>
+</body>
+</html>

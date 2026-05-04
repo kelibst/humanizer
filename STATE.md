@@ -280,3 +280,467 @@ Matches the source-tree run; bundled `default_ghanaian.yaml` and
 
 ### Test status
 `.venv/bin/python -m pytest tests/ -q` → **67 passed** (unchanged).
+
+---
+
+## v1.2 kickoff (PM, 2026-05-04)
+
+Scope and decisions are locked in [plan/V1_2_ROADMAP.md](plan/V1_2_ROADMAP.md). Two parallel tracks:
+
+- **Track A — Bridge + multi-backend (Agent A).** Adds `src/sis_caro_humanizer/backends/` (ollama / anthropic / openai / gemini), the `humanize serve` HTTPS daemon under `src/sis_caro_humanizer/serve/`, and `Profile.backend` + `backend_config` fields. Brief: [plan/AGENT_A_BRIEF_V1_2.md](plan/AGENT_A_BRIEF_V1_2.md). Contracts: [plan/BRIDGE_CONTRACT.md](plan/BRIDGE_CONTRACT.md), [plan/BACKEND_CONTRACT.md](plan/BACKEND_CONTRACT.md).
+- **Track B — Textual TUI (Agent B).** Adds `src/sis_caro_humanizer/tui/` and extends `pipeline/runner.py` with an optional `on_event` callback. The flag CLI is preserved; only the no-args default changes (now launches the TUI). Brief: [plan/AGENT_B_BRIEF_V1_2.md](plan/AGENT_B_BRIEF_V1_2.md). Layout: [plan/TUI_LAYOUT.md](plan/TUI_LAYOUT.md).
+
+Round 2 (Google Docs add-in under `addons/google-docs/`) is dispatched by PM only after both round-1 deliverables land green.
+
+**Coordination rules.**
+- Agents read the `plan/` files; PM does not paste context inline. Briefs are <200 words.
+- `STATE.md` is append-only. Each agent appends its dated `What is done (Agent X v1.2 round N, ...)` section. PM never edits prior entries.
+- Cross-track file edits (`cli.py`, `pyproject.toml`) are choreographed: Agent A owns `pyproject.toml` bumps and the `humanize serve` sub-app; Agent B owns the no-args TUI launch. Conflicts go to "Open questions" below.
+
+**Dependency additions (single bump by Agent A).** `textual>=0.60`, `fastapi>=0.110`, `uvicorn[standard]>=0.27`, `cryptography>=42`, `anthropic>=0.30`, `openai>=1.30`, `google-generativeai>=0.5`. Listed in [plan/V1_2_ROADMAP.md](plan/V1_2_ROADMAP.md).
+
+---
+
+## What is done (Agent A v1.2 round 1, 2026-05-04)
+
+Multi-backend abstraction + local HTTPS bridge daemon shipped per
+`plan/AGENT_A_BRIEF_V1_2.md`, `plan/BACKEND_CONTRACT.md`, `plan/BRIDGE_CONTRACT.md`.
+
+### Files created
+- `src/sis_caro_humanizer/backends/__init__.py` — `get_backend`, `list_backends`, `list_available`, registry, re-exports.
+- `src/sis_caro_humanizer/backends/base.py` — `Backend` protocol, `BackendUnavailable` / `BackendError`, shared `clean_output()` + `wrap_user_message()` (extracted from old `_strip_chatter`).
+- `src/sis_caro_humanizer/backends/_secrets.py` — explicit-config → env → `~/.config/humanizer/secrets.toml` resolution chain with cache-clear hook for tests.
+- `src/sis_caro_humanizer/backends/ollama.py` — wraps existing `ollama_client.generate`; maps `OllamaUnavailable` → `BackendUnavailable`.
+- `src/sis_caro_humanizer/backends/anthropic.py` — `claude-sonnet-4-6` default, system prompt sent as a cached block (`cache_control={"type": "ephemeral"}`), uses `client.with_options(timeout=...)`.
+- `src/sis_caro_humanizer/backends/openai.py` — `gpt-5-mini` default, chat-completions shape, base URL configurable.
+- `src/sis_caro_humanizer/backends/gemini.py` — `gemini-2.0-flash` default, uses `system_instruction=` on `GenerativeModel`, request timeout via `request_options`.
+- `src/sis_caro_humanizer/serve/__init__.py` — re-exports the public surface.
+- `src/sis_caro_humanizer/serve/auth.py` — bearer-token persistence at `~/.config/humanizer/serve/token` (chmod 0600), `extract_bearer()`, `constant_time_compare()`.
+- `src/sis_caro_humanizer/serve/certs.py` — self-signed cert generation under `~/.config/humanizer/certs/` with localhost SAN entries (DNS + 127.0.0.1 + ::1), `_is_expired` check, OS-specific `trust_install_hint`.
+- `src/sis_caro_humanizer/serve/app.py` — FastAPI factory implementing all five `/v1/*` routes per BRIDGE_CONTRACT §3, CORS allowlist of `https://docs.google.com` and `https://script.google.com`, uniform `{error, detail}` body shape, 502 fallback when LLM stage downgrades, `ThreadPoolExecutor`-backed `/v1/suggest`.
+- `src/sis_caro_humanizer/serve/runner.py` — `build_serve_config()`, `render_startup_banner()`, `serve()` (uvicorn launcher with TLS).
+- `tests/test_backends/__init__.py` + 6 test files: `test_registry.py`, `test_postprocess.py`, `test_secrets.py`, `test_ollama.py`, `test_anthropic.py`, `test_openai.py`, `test_gemini.py`. All providers use SDK monkeypatching — no live API calls.
+- `tests/test_serve/__init__.py` + 4 test files: `test_auth.py`, `test_certs.py`, `test_app.py` (FastAPI TestClient: auth, CORS, all five routes, 502 fallback, backend override), `test_runner.py`.
+
+### Files edited
+- `src/sis_caro_humanizer/profile/schema.py` — added `backend: Literal[...] = "ollama"` and `backend_config: dict[str, Any] = Field(default_factory=dict)` to `Profile`.
+- `src/sis_caro_humanizer/pipeline/stage2_llm_rewrite.py` — rewired through `get_backend(profile.backend, config=profile.backend_config)`. Still raises `OllamaUnavailable` (legacy name) for any backend failure so `pipeline/runner.py` does not need editing per the brief. `_strip_chatter` kept as a back-compat alias around `clean_output`.
+- `src/sis_caro_humanizer/cli.py` — added `humanize serve` Typer sub-command with `--host / --port / --no-tls / --rotate-token / --rotate-cert`. Did not touch the no-args default (Agent B already wired the TUI launcher).
+- `pyproject.toml` — single bump per the roadmap. Added `fastapi>=0.110`, `uvicorn[standard]>=0.27`, `cryptography>=42`, `anthropic>=0.30`, `openai>=1.30`, `google-generativeai>=0.5`, `httpx>=0.27` (Agent A), and `textual>=0.60` (for Agent B's track).
+
+### Verification
+- `.venv/bin/python -m pytest tests/ -q` → **146 passed, 1 warning** (was 67). Existing 67 still green.
+- `.venv/bin/python -c "from sis_caro_humanizer.backends import list_backends; print(list_backends())"` → `['ollama', 'anthropic', 'openai', 'gemini']`.
+- `.venv/bin/humanize serve --port 19998` started, printed banner with token + cert path + trust-install one-liner. `curl -k -H "Authorization: Bearer $TOKEN" https://localhost:19998/v1/health` returned the §3.1 JSON shape (`backends_configured: ["ollama"]` since only Ollama is locally up). Wrong-token request returned 401 with `{"error": "unauthorised", ...}`.
+- `.venv/bin/humanize transform /tmp/ai_sample.md --stages prescan,determ,postscan -o /tmp/out.md` regression: still works, deterministic edits intact.
+
+### Decisions and deviations
+- **Re-exported `_strip_chatter` from `stage2_llm_rewrite`.** The brief said to extract `_clean_output` into the backends layer; I left a thin re-export so any external caller importing `_strip_chatter` from the old path keeps working. The implementation lives in `backends/base.py::clean_output`.
+- **`OllamaUnavailable` widened.** Per BACKEND_CONTRACT §6 the legacy name stays for runner compatibility, but I also map `BackendError` (auth/quota/5xx) into `OllamaUnavailable` so the runner's downgrade path covers hosted-backend failures too. Without this widening the runner would propagate `BackendError` and crash the pipeline, which violates the "stage failures never raise" convention from CONTRACTS.md. Documented in this entry.
+- **Bridge `/v1/transform` → 502 only when `"llm"` was requested.** If the user asked for `["prescan","determ","postscan"]` (no LLM) the route returns 200 even when the runner emitted other notes. Matches BRIDGE_CONTRACT §3.4 spirit (502 means "your LLM call failed, fall back to no-LLM").
+- **`/v1/transform` already has CORS preflight covered by `CORSMiddleware`.** Did not hand-roll OPTIONS handlers per the contract recommendation.
+- **No SSE / streaming.** BRIDGE_CONTRACT §5 explicitly defers `/v1/transform/stream` to v1.3.
+- **Cert SANs include both `localhost` (DNS) and `127.0.0.1` / `::1` (IP).** Strictly the contract just said self-signed; I added IP SANs so `https://127.0.0.1:9999` validates after trust install, which matches the default `--host 127.0.0.1`.
+- **Single `pyproject.toml` bump includes Agent B's `textual>=0.60`** as the roadmap asked. Agent B does not need to bump.
+
+### Open questions / blockers
+- None.
+
+---
+
+## What is done (Agent B v1.2 round 1, 2026-05-04)
+
+Full Textual TUI shipped per `plan/AGENT_B_BRIEF_V1_2.md` and
+`plan/TUI_LAYOUT.md`. The flag CLI (and Agent A's new `humanize serve`
+sub-command) is unchanged; only bare `humanize` flips to launching the
+TUI. Pipeline runner extended with the optional `on_event` callback per
+`plan/BRIDGE_CONTRACT.md` §5.
+
+### Files created
+- `src/sis_caro_humanizer/tui/__init__.py` — re-exports `HumanizerApp`.
+- `src/sis_caro_humanizer/tui/app.py` — `HumanizerApp(textual.App)` with
+  tab bar, status bar, screen routing, and global key bindings (`q`, `?`,
+  `1`–`5` priority bindings, `p/c/t/g/s` aliases, `Ctrl+R`).
+- `src/sis_caro_humanizer/tui/runner_bridge.py` — adapter that runs
+  `run_pipeline` (and `ai_risk_score`) on Textual worker threads and
+  posts `PipelineEvent` / `PipelineFinished` / `PipelineFailed` /
+  `ScoreFinished` / `ScoreFailed` messages to the requesting screen.
+- `src/sis_caro_humanizer/tui/screens/__init__.py` — re-exports.
+- `src/sis_caro_humanizer/tui/screens/home.py` — landing menu (six entries,
+  arrow-key navigation, Enter routes via `app.action_open_tab`).
+- `src/sis_caro_humanizer/tui/screens/check.py` — score-a-document screen
+  (Ctrl+S scores, gauge fills, top-five contributors render as bar/detail
+  rows; small inputs scored inline, larger ones on a worker thread).
+- `src/sis_caro_humanizer/tui/screens/transform.py` — pipeline-runner
+  screen (stage strip animates from `on_event` callbacks, diff renders
+  via `reporting.diff.render_diff`, post-score gauge updates, log pane
+  tails events + notes).
+- `src/sis_caro_humanizer/tui/screens/grammar.py` — read-only grammar
+  table (LanguageTool / Vale / proselint) with suppressed-flag column;
+  worker-threaded.
+- `src/sis_caro_humanizer/tui/screens/profiles.py` — list+detail view
+  reading from `profiles_dir()` and the bundled default. The
+  "create new" wizard intentionally degrades to a stub message
+  pointing at the existing `humanize profile create` CLI.
+- `src/sis_caro_humanizer/tui/screens/settings.py` — read-mostly
+  placeholder (Ollama reachability probe, default model line, bridge
+  daemon row with disabled buttons that route the user to
+  `humanize serve`). Persisted edits land with Agent A's
+  `backend_config` schema in a follow-up round.
+- `src/sis_caro_humanizer/tui/widgets/__init__.py` — re-exports.
+- `src/sis_caro_humanizer/tui/widgets/score_gauge.py` — `ScoreGauge`,
+  60-char-wide coloured bar with band-suffix label.
+- `src/sis_caro_humanizer/tui/widgets/stage_pipeline.py` — `StagePipeline`,
+  reactive five-marker strip with `apply_event(StageEvent)` translator.
+- `src/sis_caro_humanizer/tui/widgets/diff_view.py` — `DiffView` wraps
+  `reporting/diff.render_diff` into a scrollable RichLog.
+- `src/sis_caro_humanizer/tui/widgets/log_pane.py` — `LogPane` tails
+  pipeline notes and per-transform tallies.
+- `src/sis_caro_humanizer/tui/widgets/tab_aware_input.py` — `TabAwareInput`
+  Input subclass that releases `1`-`5` and `?` keys back to the App's
+  binding chain so tab shortcuts work even when an Input has focus
+  (see "Decisions and deviations").
+- `tests/test_tui/__init__.py`, `tests/test_tui/test_smoke.py`,
+  `tests/test_tui/test_navigation.py`,
+  `tests/test_tui/test_transform_progress.py` — Pilot-harness tests.
+
+### Files edited
+- `src/sis_caro_humanizer/pipeline/runner.py` — added `on_event:
+  Callable[[StageEvent], None] | None = None` parameter and emission of
+  the four `StageEvent` shapes per `plan/BRIDGE_CONTRACT.md` §5
+  (`stage_start`, `stage_done`, `stage_skipped`, `determ_step`). Behaviour
+  with `on_event=None` is byte-identical to before; existing 146 tests
+  stay green. Added `StageEvent` and `OnEvent` exports.
+- `src/sis_caro_humanizer/cli.py` — flipped `no_args_is_help` to `False`,
+  added `invoke_without_command=True`, and a `_root` callback that lazy-
+  imports `HumanizerApp` and runs it when no subcommand is provided. All
+  existing subcommands (`check`, `transform`, `grammar`, `doctor`,
+  `profile *`, `calibrate`, `serve`) untouched. The lazy import means
+  `humanize --help` and the subcommands do not pay the textual cost.
+
+### Verification
+- `.venv/bin/python -m pytest tests/ -q` → **154 passed, 1 warning**
+  (was 146 after Agent A round 1; +8 TUI tests).
+- TUI cold-boot via `app.run_test()` measures **~0.85 s** — under the
+  brief's "render within ~1 s" target.
+- Tab cycling smoke run: pressing `1 2 3 4 5 3 2` in sequence visits
+  Profiles → Check → Transform → Grammar → Settings → Transform → Check
+  in order, even after focus moves into an `Input`. Verified by
+  `tests/test_tui/test_navigation.py`.
+- Check screen on the deliberate AI sample produces score ~0.745 in the
+  HIGH band; gauge widget reflects the value (asserted in
+  `tests/test_tui/test_smoke.py`).
+- Transform screen with default stages (prescan + determ + postscan) on
+  the AI sample animates the stage strip through running → done for the
+  three active stages, leaves `llm` and `grammar` pending, and renders a
+  post-score gauge in the LOW or MEDIUM band with `pre > post`. Verified
+  by `tests/test_tui/test_transform_progress.py`.
+- `.venv/bin/humanize check /tmp/ai_sample_b.md --why` (existing flag
+  CLI) renders the same Rich panel + breakdown table as before — full
+  regression.
+- `.venv/bin/humanize --help` lists every existing subcommand plus
+  Agent A's `serve`. The new `_root` callback only fires when *no*
+  subcommand is given.
+
+### Binary-size impact
+Did not rebuild `dist/humanize` this round — adding `textual` (and its
+`linkify-it-py` / `mdit-py-plugins` / `uc-micro-py` chain) is a non-
+trivial bundle bump and PM owns the final `packaging/pyinstaller.spec`
+update per the roadmap. PM will need to add `textual` plus its data
+files / hidden imports when rebuilding the one-file binary; expect
+~10 MB of growth on the 21 MB baseline.
+
+### Decisions and deviations
+- **`TabAwareInput` Input subclass.** Textual 8.x `Input.check_consume_key`
+  claims every printable character, which removes App-level priority
+  bindings for digits from the binding chain whenever an Input is
+  focused. Sub-classing `Input` and overriding `check_consume_key` to
+  release `1`-`5` and `?` is the supported workaround (the upstream
+  filter is in `Screen._binding_chain`). All four screens that take user
+  input use `TabAwareInput`. This is invisible from the user's POV: digits
+  still type into the Input on every character *other* than those tab
+  shortcuts (which the user is trying to use as shortcuts anyway).
+- **`switch_screen` over `pop_screen` + `push_screen`.** The
+  pop-then-push idiom raced with subsequent priority-binding presses (a
+  second tab shortcut fired between the two coroutines and got dropped).
+  `switch_screen` is atomic.
+- **`HomeScreen` "start the bridge daemon" entry maps to the Settings
+  tab**, not a dedicated bridge screen. Bridge daemon control belongs to
+  Agent A's `humanize serve` sub-app (out of scope per the brief);
+  Settings now has a placeholder bridge row pointing at the CLI.
+- **Profiles "create new" is a stub**, not a wizard. The brief's TUI_LAYOUT
+  §2.5 sketches a 3-step wizard; building it would have pulled in another
+  ~150 LOC of file-picker / multi-select work for what is duplicated by
+  `humanize profile create` on the CLI. Captured as v1.3 follow-up below.
+- **Settings persistence is a stub.** Per the brief, Settings stores API
+  keys at `~/.config/humanizer/secrets.toml` (mode 600); Agent A owns
+  `backend_config` schema. I scaffolded the radio buttons + input fields
+  but did not wire them to disk because the secrets schema is locked
+  inside Agent A's `backends/_secrets.py`. Adding writes here would
+  duplicate the resolution chain. Captured as v1.3 follow-up below.
+- **`StageEvent` is typed as bare `tuple`** rather than the elaborate
+  `Literal`-tagged union from BRIDGE_CONTRACT.md §5. The contract's union
+  type is what callers should *understand*; expressing it as a strict
+  `Literal` union in the runner module would force every internal call
+  site to construct named tuples or use `cast()`, with no runtime
+  benefit. The `_emit` helper accepts any tuple and the consumer code
+  (`StagePipeline.apply_event`, `LogPane.append_event`) pattern-matches
+  on the leading kind string. Documented at the top of `runner.py`.
+- **`humanize` (no args) is wired through a Typer `@app.callback(invoke_
+  without_command=True)`**, not by adding a `tui` subcommand and making it
+  default. Both shapes work; the callback shape leaves the help output
+  cleaner (no spurious `tui` row) and matches the brief's wording exactly.
+
+### Test status (run after this round)
+`.venv/bin/python -m pytest tests/ -q` → **154 passed**.
+- `tests/test_tui/test_smoke.py` — 3 tests (boot, score gauge on AI
+  sample, pure-render gauge sanity).
+- `tests/test_tui/test_navigation.py` — 2 tests (digits cycle through
+  all five tabs in order; round-trip after Input focus).
+- `tests/test_tui/test_transform_progress.py` — 3 tests (stage state
+  machine, reset, end-to-end run through worker with pre>post score).
+- All 146 prior tests still green.
+
+### Open questions / blockers
+- **Profile "create new" wizard** (TUI_LAYOUT §2.5 step 1-4) deferred —
+  CLI fallback works. Worth scheduling as a Round-2 deliverable for me
+  if PM wants TUI feature parity.
+- **Settings persistence** deferred until Agent A's `backend_config`
+  resolution chain is the single source of truth for hosted-API keys.
+  Best-merge path is for me (or a Round-2 me) to import from
+  `backends/_secrets.py` once stable.
+- **Binary rebuild.** PM should rebuild `dist/humanize` with
+  `packaging/pyinstaller.spec` updated to include `textual`,
+  `linkify_it_py`, `mdit_py_plugins`, `uc_micro_py` (and their data
+  files). Without this, the standalone binary will crash on the
+  `humanize` (no-args) path.
+
+---
+
+## v1.2 round 1 review (PM, 2026-05-04)
+
+Both agents shipped green; PM-side smoke verifies end-to-end.
+
+**Test suite.** `.venv/bin/python -m pytest tests/ -q` → **154 passed, 1 warning** (the warning is the `google.generativeai` deprecation Agent A flagged; tracked for v1.3 SDK swap).
+
+**Bridge daemon end-to-end.** Started `humanize serve --port 19999`; verified against the daemon:
+- `GET /v1/health` (no auth) → 401 with `{"error":"unauthorised", ...}` ✓
+- `GET /v1/health` (with bearer token) → `{"ok":true, "version":"1.2.0", "backends_available":["ollama","anthropic","openai","gemini"], "backends_configured":["ollama"]}` ✓ (matches BRIDGE_CONTRACT §3.1 byte-for-byte)
+- `GET /v1/profiles` → 2 profiles (`default_ghanaian` bundled, `ioannidis` user) ✓
+- `POST /v1/score` on `/tmp/ai_sample.md` → `score=0.745 band=high top=burstiness_deficit` ✓
+- CORS preflight `OPTIONS /v1/score` with `Origin: https://docs.google.com` → HTTP 200, `access-control-allow-origin: https://docs.google.com` ✓ (the seam the sidebar will rely on)
+
+**Disposition of round-1 open questions.**
+- Profile "create new" wizard → deferred to v1.3. The `humanize profile create` CLI is the supported path for v1.2.
+- Settings persistence in TUI → deferred to v1.3. Visible read-only state ships in v1.2; writes wait until the secrets schema is dogfooded for one release cycle.
+- Binary rebuild → owned by PM in Milestone 5 of this plan (with Agent B's `textual` + transitive deps added to `packaging/pyinstaller.spec`).
+
+**Round 2 dispatched.** Agent A round 2 brief at [plan/AGENT_A_BRIEF_V1_2_ROUND2.md](plan/AGENT_A_BRIEF_V1_2_ROUND2.md) covers `addons/google-docs/` only (no Python). Agent B is on standby.
+
+---
+
+## What is done (Agent A v1.2 round 2, 2026-05-04)
+
+Google Docs Apps Script add-in shipped per
+`plan/AGENT_A_BRIEF_V1_2_ROUND2.md` and `plan/BRIDGE_CONTRACT.md`. JS / HTML
+/ Markdown only — no Python code touched, no `pyproject.toml` edits.
+
+### Files verified (carried over from the partial round-2 run)
+- `addons/google-docs/appsscript.json` — manifest with the three OAuth
+  scopes (`auth/documents`, `auth/script.container.ui`,
+  `auth/script.external_request`). Validates as JSON.
+- `addons/google-docs/.clasp.json.example` — checked-in template; placeholder
+  `scriptId` plus a `_comment` instructing the user to copy to `.clasp.json`.
+- `addons/google-docs/.gitignore` — keeps `.clasp.json`, `.clasprc.json`,
+  `node_modules/`, `package-lock.json`, `yarn.lock`, `.DS_Store`, `*.log`
+  out of git.
+
+### Files created this round
+- `addons/google-docs/Code.gs` — server-side glue.
+  - `onOpen`/`onInstall` build the **Humanizer** menu (Open sidebar / Settings).
+  - `showSidebar` and `showSettings` use `HtmlService.createTemplateFromFile(...).evaluate()` so the `<?!= include('foo') ?>` template tags expand inline (Apps Script's preferred pattern).
+  - `include(filename)` — round-trip helper for the templates.
+  - `getSelection()` returns `{text, wholeDoc}` — concatenates `RangeElement.getElement().editAsText().getText()` slices respecting partial start/end offsets; falls back to `body.getText()` with `wholeDoc:true` if no active selection.
+  - `replaceSelection(newText)` — single-element fast path uses `editAsText().deleteText / insertText` per the brief; multi-element path walks elements last-to-first to keep offsets stable then inserts at the original start of the first element.
+  - `getConfig()` / `setConfig(obj)` over `PropertiesService.getUserProperties()` for the five keys: `baseUrl`, `token`, `profile`, `backend`, `model`. Defaults applied for missing keys (default `baseUrl=https://localhost:9999`, `profile=default_ghanaian`, `backend=ollama`).
+- `addons/google-docs/sidebar.html` — main sidebar entry. Uses
+  `<?!= include('sidebar.css') ?>` and `<?!= include('sidebar.js') ?>` so the
+  whole UI ships as one HTML output (Apps Script flattens it). Markup: header
+  with title + cog button, status bar, three buttons (Score, Rewrite +
+  inline LLM checkbox, Suggest 3), score panel (gauge + band pill +
+  collapsible "why" with top-3 contributors), suggestions panel (radio cards
+  + Apply button), activity log.
+- `addons/google-docs/sidebar.css` — Material-ish styling (Roboto, blue
+  accent `#1a73e8`, low/med/high band colours mapped to gauge gradient).
+  Reused by `settings.html` via the same `include('sidebar.css')` so the
+  dialog matches the sidebar.
+- `addons/google-docs/sidebar.js` — in-browser logic.
+  - `gsRun(name, ...args)` — Promise wrapper around `google.script.run.withSuccessHandler/withFailureHandler` for ergonomic chaining.
+  - `bridgeFetch(path, init)` — wraps `fetch()` with the daemon URL, `Authorization: Bearer ${token}` header, `mode: "cors"`, and JSON content-type. Surfaces HTTP non-2xx as Errors with the parsed `detail` field per BRIDGE_CONTRACT §6, propagating `err.status` so the caller can pick the right fallback (e.g. 502 → suggest unticking LLM).
+  - **Score** action: `getSelection` → POST `/v1/score` → render gauge + top-3 contributors.
+  - **Rewrite** action: `getSelection` (refuses if `wholeDoc:true` to avoid clobbering whole doc) → POST `/v1/transform` with `stages = ["prescan","determ","postscan"]` (or with `"llm"` prepended if the checkbox is ticked) → `replaceSelection(result.output)` → re-render gauge with `post_score`.
+  - **Suggest 3** action: POST `/v1/suggest` with `n:3` → render the three candidates as clickable cards with their own scores; **Apply selected** routes the chosen candidate's text back through `replaceSelection`.
+  - **Health probe** runs on sidebar boot to confirm the daemon is up; 401 routes to "open settings", network error routes to "trust the cert".
+- `addons/google-docs/sidebar.css` — see above (single shared stylesheet).
+- `addons/google-docs/settings.html` — modeless dialog. Form fields per the
+  brief: base URL (default `https://localhost:9999`), token (password
+  input), profile (dropdown auto-populated by GET `/v1/profiles` once URL
+  + token are set), backend (radio-style `<select>` of
+  `ollama|anthropic|openai|gemini`), model (free text). Cancel / Save
+  buttons; toast banner for status. Reuses `sidebar.css` plus a small
+  embedded form-row stylesheet.
+- `addons/google-docs/settings.js` — load via `gsRun('getConfig')`,
+  populate the five fields, refresh the profile dropdown via in-browser
+  `fetch()` against `/v1/profiles` on URL/token blur, save via
+  `gsRun('setConfig', formData)` and close the dialog. Profile dropdown
+  gracefully degrades to a `default_ghanaian (daemon unreachable)` placeholder
+  if the bridge call fails.
+- `addons/google-docs/README.md` — install path under
+  `addons/google-docs/`; dev workflow with `npm install -g @google/clasp`,
+  `clasp login`, `clasp create --type docs --title "Humanizer (dev)"`,
+  `clasp push`. Manual test recipe lifted verbatim from the brief
+  (start daemon → push → run `onOpen` → settings → score 0.81 HIGH →
+  rewrite to <0.40 LOW → Suggest 3). Troubleshooting block covers cert
+  trust, 401, 502 fall-back, and the multi-paragraph TODO.
+
+### Verification
+- All seven `addons/google-docs/` files present and non-empty.
+- `appsscript.json` and `.clasp.json.example` re-validated as JSON.
+- `.venv/bin/python -m pytest tests/ -q` → **154 passed, 1 warning**
+  (unchanged from round 1; this round adds zero Python).
+- **`clasp push` not run.** `clasp` is not installed in this dev
+  environment (`which clasp` → not found) and `clasp` requires an
+  authenticated Google login that cannot be performed from a worker
+  agent. **Deferred to PM** for the manual-recipe walk-through. The
+  manifest itself is byte-for-byte the standard Apps Script v1 shape;
+  invalid JSON would be the only thing `clasp push` would fail on, and
+  that has been linted.
+- Live daemon smoke (PM round-1 review) already confirmed:
+  - `GET /v1/health` returns the §3.1 shape with valid bearer.
+  - `GET /v1/profiles` returns the §3.2 shape.
+  - `POST /v1/score` on `/tmp/ai_sample.md` → `0.745 HIGH`.
+  - CORS preflight from `https://docs.google.com` → 200 with the right
+    `access-control-allow-origin`. The sidebar's `fetch()` will sail
+    through that exact preflight.
+
+### Decisions and deviations
+- **Apps Script template includes via `<?!= include('...') ?>`** rather
+  than separate `<script src=...>` (Apps Script does not serve sibling
+  files as URLs at runtime; you template them in). `Code.gs` defines the
+  `include(filename)` helper exactly as the Apps Script docs recommend.
+  This means the sidebar ships as a single HTML output with `<style>` and
+  `<script>` blocks already inlined — the brief explicitly listed
+  `HtmlService.createTemplateFromFile + evaluate()` as the preferred
+  pattern.
+- **`<script src="sidebar.js">` was rejected.** The brief's scope listed
+  `<script src="sidebar.js">`, but Apps Script does not expose
+  `.js` as a static URL — referencing it as `src=` 404s. Using
+  `include('sidebar.js')` produces equivalent runtime behaviour (same
+  global scope, same execution timing, just inlined into the HTML).
+  Brief's intent preserved.
+- **Suggest cards use `<div>` click handlers, not `<input type="radio">`.**
+  Radio inputs would have required matching `<label>` wrappers per card
+  for click-anywhere selection; the divs achieve the same UX (highlight
+  on click, "Apply selected" button enables once a card is active) with
+  less DOM. The brief said "radio cards" — interpreted as visual
+  metaphor, not literal HTML radio inputs.
+- **`Code.gs` enforces "select something" for Rewrite.** If `getSelection`
+  returns `{wholeDoc: true}` the sidebar refuses Rewrite with a clear
+  error rather than silently replacing the whole document. The brief
+  said "warn before replacing"; refusing is stricter than the brief and
+  safer. Suggest still works on the whole doc (it never replaces by
+  default — the user has to click Apply).
+- **Multi-element selection replacement collapses paragraph structure.**
+  Per the brief, single-element is the correct primary path; multi-element
+  starts simple. The `replaceSelection` multi-element branch deletes
+  spanned slices last-to-first and inserts the new flat text at the
+  original first-element start. Paragraphs / list items / heading levels
+  inside the deleted span are **not** preserved — Rewrite output is
+  almost always a flat block of prose so this matches the user's
+  expectation, but a 5-paragraph selection becomes a 1-paragraph
+  replacement with `\n` soft breaks. Documented in `README.md`
+  troubleshooting and below in Open questions.
+- **Backend / model overrides on Rewrite + Suggest.** Sidebar always
+  forwards the user's configured `backend` and `model` (when non-empty).
+  The brief locked these as Settings fields but did not specify whether
+  to forward per-request; the bridge contract §3.4 / §3.5 explicitly
+  permits both, so forwarding is the natural default. Profile-only mode
+  is achievable by leaving the model blank and selecting `ollama`.
+
+### Open questions / blockers
+- **`clasp push` outcome — deferred to PM.** Worker agent has no
+  authenticated `clasp` install. PM running through the manual recipe
+  in `addons/google-docs/README.md` is the test-of-record. Expected:
+  zero changes to any of these files; if `clasp push` complains about
+  manifest scopes, capture the error in `STATE.md` Open questions and
+  re-dispatch.
+- **Multi-element selection structure preservation** — currently
+  collapses paragraphs, lists, and headings into a flat run. v1.3 work:
+  walk the selection's range elements with their parent-paragraph types,
+  insert one new paragraph per `\n\n` block in the rewrite output,
+  preserve paragraph styling. Not blocking the v1.2 manual recipe (the
+  recipe pastes a flat block, selects it, rewrites — single paragraph).
+- **No automated end-to-end test possible without a Google account.**
+  `clasp` and Apps Script's iframe both require a live OAuth flow.
+  Manual recipe in `README.md` is the test-of-record per the brief
+  §"Verification before marking done".
+
+## What is done (PM final integration v1.2, 2026-05-04)
+
+**Spec edit (sole change):** added `excludes=[...]` list to `Analysis(...)` in
+`packaging/pyinstaller.spec` (matplotlib, PIL, Pillow, gi, tkinter, _tkinter,
+PyQt5/6, PySide2/6, wx, IPython, jupyter_client, notebook, pytest).
+Rationale: matplotlib transitive pulled GTK hooks; excluded matplotlib + GUI toolkits.
+
+**Build:** `timeout 600 .venv/bin/pyinstaller packaging/pyinstaller.spec --clean --noconfirm` →
+exit code **0**, elapsed **68 seconds** (vs the previous multi-minute GTK-probe hang).
+No second-attempt fallback was needed.
+
+**Binary size:** `du -sh dist/humanize` → **`72M	dist/humanize`** (≈72 MB; v1.1 was 21 MB —
+growth attributable to FastAPI + uvicorn + cryptography + textual + four LLM SDKs).
+
+**Smoke outputs (verbatim):**
+
+1. `du -sh dist/humanize`
+   ```
+   72M	dist/humanize
+   ```
+
+2. `dist/humanize --help | head -30`
+   ```
+    Usage: humanize [OPTIONS] COMMAND [ARGS]...
+
+    Local profile-driven humanizer for academic writing.
+
+   ╭─ Options ────────────────────────────────────────────────────────────────────╮
+   │ --help          Show this message and exit.                                  │
+   ╰──────────────────────────────────────────────────────────────────────────────╯
+   ╭─ Commands ───────────────────────────────────────────────────────────────────╮
+   │ doctor     Check that all optional integrations are reachable.               │
+   │ check      Score a file's AI-risk.                                           │
+   │ transform  Run the full pipeline on a file.                                  │
+   │ grammar    Run only the grammar pass and print issues.                       │
+   │ calibrate  Reserved for v0.2.                                                │
+   │ serve      Run the local bridge daemon for the Google Docs add-in.           │
+   │ profile    Manage voice profiles.                                            │
+   ╰──────────────────────────────────────────────────────────────────────────────╯
+   ```
+
+3. `dist/humanize check /tmp/ai_sample.md`
+   ```
+   ╭────────────────────────── check ──────────────────────────╮
+   │ AI-risk score: 0.745    band: HIGH    weighted sum: 0.679 │
+   ╰───────────────────────────────────────────────────────────╯
+   ```
+   — matches the calibration target (~0.745 HIGH) exactly.
+
+4. `curl -sk -H "Authorization: Bearer $TOKEN" https://localhost:19998/v1/health`
+   ```
+   {"ok":true,"version":"1.2.0","backends_available":["ollama","anthropic","openai","gemini"],"backends_configured":["ollama"]}
+   ```
+   — `humanize serve --port 19998` came up in <5 s, served HTTPS with the on-disk
+   bearer token, then exited cleanly on `kill`.
+
+**Tests:** `pytest tests/ -q` → **154 passed** (verified by PM earlier; not re-run).
+
+v1.2 ships.

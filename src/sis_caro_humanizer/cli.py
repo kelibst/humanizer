@@ -43,14 +43,41 @@ from .scoring.risk import ai_risk_score
 app = typer.Typer(
     name="humanize",
     help="Local profile-driven humanizer for academic writing.",
-    no_args_is_help=True,
+    no_args_is_help=False,  # v1.2: bare `humanize` launches the TUI instead.
     add_completion=False,
+    invoke_without_command=True,
 )
 
 profile_app = typer.Typer(name="profile", help="Manage voice profiles.", no_args_is_help=True)
 app.add_typer(profile_app, name="profile")
 
 _console = Console()
+
+
+@app.callback()
+def _root(ctx: typer.Context) -> None:
+    """Launch the Textual TUI when invoked with no subcommand.
+
+    Subcommands (``humanize check ...``, ``humanize transform ...``, etc.)
+    behave exactly as before. Only the bare ``humanize`` invocation changed.
+    The flag CLI is preserved for scripting.
+    """
+    if ctx.invoked_subcommand is not None:
+        return
+    # Lazy import so `humanize --help` and the subcommands do not pay the
+    # textual import cost (and so a missing textual install only bites the
+    # bare-launch path, not the rest of the CLI).
+    try:
+        from .tui.app import HumanizerApp
+    except Exception as exc:  # noqa: BLE001
+        _console.print(
+            "[red]could not start TUI:[/red] "
+            f"{exc}\n"
+            "[dim]install with `pip install textual>=0.60` or use a subcommand "
+            "(see `humanize --help`).[/dim]"
+        )
+        raise typer.Exit(code=2) from exc
+    HumanizerApp().run()
 
 
 # ---------------------------------------------------------------------------
@@ -335,6 +362,47 @@ def calibrate() -> None:
     """Reserved for v0.2."""
     _console.print("calibrate not implemented in v0.1")
     raise typer.Exit(code=0)
+
+
+# ---------------------------------------------------------------------------
+# serve — local HTTPS bridge daemon (v1.2)
+# ---------------------------------------------------------------------------
+
+
+@app.command()
+def serve(
+    host: str = typer.Option("127.0.0.1", "--host", help="Bind address (loopback by default)."),
+    port: int = typer.Option(9999, "--port", help="TCP port."),
+    no_tls: bool = typer.Option(
+        False,
+        "--no-tls",
+        help="Disable TLS (local debugging only; the Docs sidebar refuses non-TLS).",
+    ),
+    rotate_token: bool = typer.Option(
+        False,
+        "--rotate-token",
+        help="Generate a fresh bearer token instead of reusing the persisted one.",
+    ),
+    rotate_cert: bool = typer.Option(
+        False,
+        "--rotate-cert",
+        help="Generate a fresh self-signed cert/key pair.",
+    ),
+) -> None:
+    """Run the local bridge daemon for the Google Docs add-in.
+
+    Prints the bearer token and cert path to stderr at startup, then blocks on
+    uvicorn until SIGINT.
+    """
+    from .serve.runner import serve as _serve
+
+    _serve(
+        host=host,
+        port=port,
+        tls=not no_tls,
+        rotate_token=rotate_token,
+        rotate_cert=rotate_cert,
+    )
 
 
 def main() -> None:  # pragma: no cover - entry point

@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <base target="_top">
+  <meta charset="utf-8">
+  <style><?!= include('sidebar.css') ?></style>
+</head>
+<body>
+  <div class="hz-app">
+    <header class="hz-header">
+      <div class="hz-title">Humanizer</div>
+      <button id="hz-settings-btn" class="hz-icon-btn" title="Settings">&#9881;</button>
+    </header>
+
+    <div id="hz-status" class="hz-status hz-status--idle">
+      <span id="hz-status-dot" class="hz-dot"></span>
+      <span id="hz-status-text">Checking daemon…</span>
+    </div>
+
+    <section class="hz-actions">
+      <button id="hz-score-btn" class="hz-btn hz-btn--secondary" disabled>
+        Score
+      </button>
+
+      <div class="hz-rewrite-row">
+        <button id="hz-rewrite-btn" class="hz-btn hz-btn--primary" disabled>
+          Rewrite
+        </button>
+        <label class="hz-checkbox" title="Include the LLM rewrite stage (slower; needs a configured backend)">
+          <input type="checkbox" id="hz-include-llm">
+          <span>LLM</span>
+        </label>
+      </div>
+
+      <button id="hz-suggest-btn" class="hz-btn hz-btn--secondary" disabled>
+        Suggest 3
+      </button>
+    </section>
+
+    <section id="hz-score-panel" class="hz-panel hz-hidden">
+      <div class="hz-panel-title">Score</div>
+      <div class="hz-gauge">
+        <div class="hz-gauge-bar">
+          <div id="hz-gauge-fill" class="hz-gauge-fill" style="width:0%"></div>
+        </div>
+        <div class="hz-gauge-meta">
+          <span id="hz-gauge-value">0.000</span>
+          <span id="hz-gauge-band" class="hz-band hz-band--low">LOW</span>
+        </div>
+      </div>
+      <details id="hz-why" class="hz-why">
+        <summary>why</summary>
+        <ul id="hz-why-list" class="hz-why-list"></ul>
+      </details>
+    </section>
+
+    <section id="hz-suggest-panel" class="hz-panel hz-hidden">
+      <div class="hz-panel-title">Suggestions</div>
+      <div id="hz-suggest-list" class="hz-suggest-list"></div>
+      <button id="hz-suggest-apply" class="hz-btn hz-btn--primary" disabled>
+        Apply selected
+      </button>
+    </section>
+
+    <section id="hz-log-panel" class="hz-panel">
+      <div class="hz-panel-title">Activity</div>
+      <div id="hz-log" class="hz-log"></div>
+    </section>
+  </div>
+
+  <script><?!= include('sidebar.js') ?></script>
+</body>
+</html>

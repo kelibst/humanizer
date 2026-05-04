@@ -1,0 +1,12 @@
+# Real clasp credentials and project IDs — never commit
+.clasp.json
+.clasprc.json
+
+# Node tooling that some clasp setups pull in
+node_modules/
+package-lock.json
+yarn.lock
+
+# Editor/OS junk
+.DS_Store
+*.log

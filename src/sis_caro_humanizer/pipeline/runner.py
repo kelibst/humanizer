@@ -15,7 +15,7 @@ from __future__ import annotations
 
 import time
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Any, Iterable
+from typing import TYPE_CHECKING, Any, Callable, Iterable
 
 from ..profile.schema import Profile
 from ..scoring.risk import ScoreReport
@@ -26,6 +26,29 @@ if TYPE_CHECKING:  # pragma: no cover - typing-only imports
     from ..grammar.runner import GrammarReport
 
 ALL_STAGES: tuple[str, ...] = ("prescan", "llm", "determ", "grammar", "postscan")
+
+# StageEvent shapes (per plan/BRIDGE_CONTRACT.md §5):
+#   ("stage_start",   stage_name)
+#   ("stage_done",    stage_name, elapsed_s)
+#   ("stage_skipped", stage_name, reason)
+#   ("determ_step",   transform_name, edits)
+StageEvent = tuple  # tuple[str, ...] of one of the four shapes above
+OnEvent = Callable[[StageEvent], None]
+
+
+def _emit(on_event: OnEvent | None, event: StageEvent) -> None:
+    """Invoke ``on_event`` while swallowing any callback failure.
+
+    Stage execution must never be derailed by a misbehaving observer (TUI
+    widget, HTTP streamer, test spy). Any exception inside the callback is
+    silently absorbed.
+    """
+    if on_event is None:
+        return
+    try:
+        on_event(event)
+    except Exception:  # noqa: BLE001 - observer must never break the pipeline
+        pass
 
 
 @dataclass
@@ -125,12 +148,25 @@ def run_pipeline(
     stages: Iterable[str] = ALL_STAGES,
     model: str | None = None,
     seed: int | None = None,
+    on_event: OnEvent | None = None,
 ) -> PipelineResult:
     """Execute the requested stages and return a :class:`PipelineResult`.
 
     The runner *never* raises for an individual stage failure: missing tools or
     models surface as a downgrade note plus an unchanged text passed to the
     next stage. The caller decides how to render the notes.
+
+    ``on_event``, if provided, is invoked at four points (see
+    ``plan/BRIDGE_CONTRACT.md`` §5):
+
+    * ``("stage_start",   stage_name)`` before each stage runs.
+    * ``("stage_done",    stage_name, elapsed_s)`` after the stage completes.
+    * ``("stage_skipped", stage_name, reason)`` when a stage is downgraded.
+    * ``("determ_step",   transform_name, edits)`` once per deterministic
+      transform that produced one or more edits.
+
+    The callback is purely observational; behaviour with ``on_event=None`` is
+    identical to before this parameter existed (so existing tests stay green).
     """
     started = time.monotonic()
     active = _normalize_stages(stages)
@@ -145,26 +181,63 @@ def run_pipeline(
     current = text
 
     if "prescan" in active:
+        _emit(on_event, ("stage_start", "prescan"))
+        t0 = time.monotonic()
         pre = prescan(current, profile)
+        _emit(on_event, ("stage_done", "prescan", time.monotonic() - t0))
 
     if "llm" in active:
+        _emit(on_event, ("stage_start", "llm"))
+        t0 = time.monotonic()
         current, llm_used, note = _run_llm(current, profile, model)
+        elapsed_stage = time.monotonic() - t0
         if note:
             notes.append(note)
+            _emit(on_event, ("stage_skipped", "llm", note))
+        else:
+            _emit(on_event, ("stage_done", "llm", elapsed_stage))
 
     if "determ" in active:
+        _emit(on_event, ("stage_start", "determ"))
+        t0 = time.monotonic()
         current, log, note = _run_determ(current, profile, seed)
         determ_log.extend(log)
+        elapsed_stage = time.monotonic() - t0
         if note:
             notes.append(note)
+            _emit(on_event, ("stage_skipped", "determ", note))
+        else:
+            # Aggregate per-transform counts and emit one event per transform
+            # that produced edits, in the order they first appeared.
+            counts: dict[str, int] = {}
+            order: list[str] = []
+            for entry in log:
+                name = getattr(entry, "transform", None) or (
+                    entry.get("transform") if isinstance(entry, dict) else str(entry)
+                )
+                if name not in counts:
+                    order.append(name)
+                counts[name] = counts.get(name, 0) + 1
+            for name in order:
+                _emit(on_event, ("determ_step", name, counts[name]))
+            _emit(on_event, ("stage_done", "determ", elapsed_stage))
 
     if "grammar" in active:
+        _emit(on_event, ("stage_start", "grammar"))
+        t0 = time.monotonic()
         grammar_report, note = _run_grammar(current, profile)
+        elapsed_stage = time.monotonic() - t0
         if note:
             notes.append(note)
+            _emit(on_event, ("stage_skipped", "grammar", note))
+        else:
+            _emit(on_event, ("stage_done", "grammar", elapsed_stage))
 
     if "postscan" in active:
+        _emit(on_event, ("stage_start", "postscan"))
+        t0 = time.monotonic()
         post = postscan(current, profile)
+        _emit(on_event, ("stage_done", "postscan", time.monotonic() - t0))
 
     # If only one of pre/post ran, mirror the value so callers always see a
     # populated ScoreReport. If neither ran, fall back to scoring once on the
@@ -191,4 +264,11 @@ def run_pipeline(
     )
 
 
-__all__ = ["PipelineResult", "TransformLog", "run_pipeline", "ALL_STAGES"]
+__all__ = [
+    "ALL_STAGES",
+    "OnEvent",
+    "PipelineResult",
+    "StageEvent",
+    "TransformLog",
+    "run_pipeline",
+]
