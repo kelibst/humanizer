@@ -79,7 +79,7 @@ class CheckScreen(Screen):
         yield Static("[bold]check[/bold]  —  score a document for AI-detector risk", id="check-title")
         with Horizontal(id="check-input-row"):
             yield TabAwareInput(
-                placeholder="path to .md/.txt file (or paste text below)",
+                placeholder="path to .md, .txt, or .docx file (or paste text below)",
                 id="check-input",
             )
             yield Button("score", id="check-run-btn", variant="primary")
@@ -143,6 +143,14 @@ class CheckScreen(Screen):
         candidate = Path(path_or_text)
         try:
             if candidate.exists() and candidate.is_file():
+                if candidate.suffix.lower() == ".docx":
+                    try:
+                        from ...docx_bridge import extract_text
+
+                        return extract_text(candidate)
+                    except ImportError as exc:
+                        self._set_status(str(exc), error=True)
+                        return None
                 return candidate.read_text(encoding="utf-8")
         except OSError as exc:
             self._set_status(f"could not read {candidate}: {exc}", error=True)

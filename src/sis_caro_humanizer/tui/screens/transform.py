@@ -84,6 +84,13 @@ class TransformScreen(Screen):
     #t-stages-row Checkbox {
         margin-right: 1;
     }
+    #t-save-docx-btn {
+        margin-top: 1;
+        display: none;
+    }
+    #t-save-docx-btn.-docx-ready {
+        display: block;
+    }
     """
 
     def __init__(
@@ -98,6 +105,7 @@ class TransformScreen(Screen):
         self._initial_path = initial_path or ""
         self._last_input: str | None = None
         self._last_result: PipelineResult | None = None
+        self._docx_source: Path | None = None  # set when input is a .docx file
 
     def compose(self) -> ComposeResult:
         yield Static("[bold]transform[/bold]  —  rewrite a document", id="t-title")
@@ -105,7 +113,7 @@ class TransformScreen(Screen):
         with Horizontal(id="t-input-row"):
             yield TabAwareInput(
                 value=self._initial_path,
-                placeholder="path to a .md/.txt file (or paste text)",
+                placeholder="path to .md, .txt, or .docx — or paste text",
                 id="t-input",
             )
             yield Button("run", id="t-run-btn", variant="primary")
@@ -130,6 +138,8 @@ class TransformScreen(Screen):
             yield Static("post score:", id="t-postscore-label")
             yield ScoreGauge(id="t-postscore-gauge")
 
+        yield Button("save .docx", id="t-save-docx-btn", variant="success", disabled=True)
+
     # -- actions -----------------------------------------------------------
 
     def action_run(self) -> None:
@@ -145,6 +155,8 @@ class TransformScreen(Screen):
     def on_button_pressed(self, event: Button.Pressed) -> None:
         if event.button.id == "t-run-btn":
             self._kick_off_run()
+        elif event.button.id == "t-save-docx-btn":
+            self._save_docx()
 
     def on_input_submitted(self, event: Input.Submitted) -> None:
         if event.input.id == "t-input":
@@ -199,16 +211,39 @@ class TransformScreen(Screen):
         candidate = Path(path_or_text)
         try:
             if candidate.exists() and candidate.is_file():
+                if candidate.suffix.lower() == ".docx":
+                    try:
+                        from ...docx_bridge import extract_text
+
+                        self._docx_source = candidate
+                        return extract_text(candidate)
+                    except ImportError as exc:
+                        self._set_status(str(exc), error=True)
+                        return None
+                self._docx_source = None
                 return candidate.read_text(encoding="utf-8")
         except OSError as exc:
             self._set_status(f"could not read {candidate}: {exc}", error=True)
             return None
+        self._docx_source = None
         return path_or_text
 
     def _set_status(self, message: str, *, error: bool = False) -> None:
         status = self.query_one("#t-status", Static)
         style = "red" if error else "dim"
         status.update(Text(message, style=style))
+
+    def _save_docx(self) -> None:
+        if self._docx_source is None or self._last_result is None:
+            return
+        try:
+            from ...docx_bridge import write_docx
+
+            out_path = self._docx_source.parent / f"{self._docx_source.stem}_humanized.docx"
+            write_docx(self._docx_source, self._last_result.output, out_path)
+            self._set_status(f"saved {out_path}")
+        except Exception as exc:  # noqa: BLE001
+            self._set_status(f"save failed: {exc}", error=True)
 
     # -- pipeline messages -------------------------------------------------
 
@@ -244,6 +279,15 @@ class TransformScreen(Screen):
         log = self.query_one("#t-log", LogPane)
         for note in result.notes:
             log.append_note(note)
+
+        # Show the Save .docx button only when the input was a .docx file.
+        save_btn = self.query_one("#t-save-docx-btn", Button)
+        if self._docx_source is not None:
+            save_btn.add_class("-docx-ready")
+            save_btn.disabled = False
+        else:
+            save_btn.remove_class("-docx-ready")
+            save_btn.disabled = True
 
     def on_pipeline_failed(self, message: PipelineFailed) -> None:
         self._set_status(f"pipeline failed: {message.error}", error=True)

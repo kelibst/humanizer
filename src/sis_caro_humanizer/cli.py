@@ -100,6 +100,14 @@ def _read_input(path: Path) -> str:
     if not path.exists():
         _console.print(f"[red]input not found:[/red] {path}")
         raise typer.Exit(code=2)
+    if path.suffix.lower() == ".docx":
+        try:
+            from .docx_bridge import extract_text
+
+            return extract_text(path)
+        except ImportError as exc:
+            _console.print(f"[red]docx error:[/red] {exc}")
+            raise typer.Exit(code=2) from exc
     return path.read_text(encoding="utf-8")
 
 
@@ -305,10 +313,20 @@ def transform(
 
     result = run_pipeline(text, prof, stages=stage_tuple, model=model, seed=seed)
 
+    # Determine effective output path; for .docx input default to <stem>_humanized.docx
+    is_docx_input = input.suffix.lower() == ".docx"
+    if out is None and is_docx_input:
+        out = input.parent / f"{input.stem}_humanized.docx"
+
     if out is None:
         sys.stdout.write(result.output)
         if not result.output.endswith("\n"):
             sys.stdout.write("\n")
+    elif out.suffix.lower() == ".docx":
+        from .docx_bridge import write_docx
+
+        write_docx(input, result.output, out)
+        Console(stderr=True).print(f"[green]saved[/green] {out}")
     else:
         out.write_text(result.output, encoding="utf-8")
 

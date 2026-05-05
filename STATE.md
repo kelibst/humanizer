@@ -744,3 +744,60 @@ growth attributable to FastAPI + uvicorn + cryptography + textual + four LLM SDK
 **Tests:** `pytest tests/ -q` → **154 passed** (verified by PM earlier; not re-run).
 
 v1.2 ships.
+
+---
+
+## What is done (Agent A v1.2 UX Sprint, 2026-05-05)
+
+Distribution and install files created. No Python files touched.
+
+### Files created
+- `install.sh` — one-command installer: detects OS/arch, installs Ollama (Linux auto-install; macOS prompts), starts daemon, pulls `gemma3:4b`, downloads binary to `~/.local/bin/`, patches `~/.bashrc` / `~/.zshrc` if needed. Uses `set -euo pipefail`.
+- `README.md` — rewritten. 3-step Quick Start is the first content after the title, before all other sections. Under 80 lines before the Advanced section. All Python-dev references removed.
+- `packaging/build-release.sh` — builds PyInstaller binary, names artifact `humanize-<os>-<arch>`, copies to `dist/release/` alongside `install.sh`, prints the `gh release create` command.
+- `packaging/RELEASE_NOTES_v1.2.md` — GitHub Release body covering TUI, .docx support, multi-backend, Google Docs add-in, one-command install, system requirements, and full-docs link. Under 60 lines.
+- `MONETIZATION.md` — 7-step Gumroad setup guide for the owner (internal, not public-facing).
+
+## What is done (Agent B v1.2 UX Sprint, 2026-05-05)
+
+### Files created
+- `src/sis_caro_humanizer/docx_bridge.py` — `extract_text` and `write_docx`; raises `ImportError` gracefully if python-docx absent.
+- `tests/test_docx_bridge.py` — 3 tests: roundtrip extract, write replaces text, missing-dep ImportError.
+
+### Files edited
+- `src/sis_caro_humanizer/cli.py` — `_read_input` handles `.docx`; `transform` defaults `--out` to `<stem>_humanized.docx` for `.docx` input and writes `.docx` via `write_docx`; profile fallback already silent.
+- `src/sis_caro_humanizer/tui/screens/transform.py` — placeholder updated; `_read_input` extracts `.docx`; `[Save .docx]` button appears after run.
+- `src/sis_caro_humanizer/tui/screens/check.py` — placeholder updated; `_read_input` extracts `.docx`.
+- `src/sis_caro_humanizer/tui/screens/home.py` — welcoming "No profile needed" status line added.
+- `pyproject.toml` — added `python-docx>=1.1`.
+- `packaging/pyinstaller.spec` — added `collect_submodules("docx")` and `collect_data_files("docx")`.
+
+**Tests:** `pytest tests/ -q` → **157 passed** (154 existing + 3 new docx tests). No regressions.
+
+## What is done (PM v1.2 UX Sprint review, 2026-05-05)
+
+### PM integration review — all green
+
+Both agent deliverables reviewed against the brief and verified end-to-end:
+
+**Agent A output verified:**
+- `install.sh` — `set -euo pipefail`, OS/arch detection, Ollama auto-install (Linux) / prompt (macOS), model pull with 2 GB notice, binary download to `~/.local/bin/`, PATH patch for `.bashrc`/`.zshrc`, success banner.
+- `README.md` — 3-step Quick Start is the first content after title. All Python-dev content removed.
+- `packaging/build-release.sh`, `packaging/RELEASE_NOTES_v1.2.md`, `MONETIZATION.md` — present and correct.
+
+**Agent B output verified:**
+- `src/sis_caro_humanizer/docx_bridge.py` — clean 81-line module with `extract_text` / `write_docx`. Graceful ImportError if python-docx absent.
+- `cli.py` — `.docx` read, default `<stem>_humanized.docx` output, silent profile fallback.
+- TUI transform/check screens accept `.docx`; home screen shows "No profile needed" in green.
+- `pyproject.toml` and `packaging/pyinstaller.spec` updated.
+
+**Test results:** `pytest tests/ -q` → **157 passed, 1 warning** (FutureWarning in gemini backend — pre-existing, not introduced in this sprint).
+
+**Smoke tests:**
+- `humanize transform /tmp/test_humanize.md` — 0.414 (MEDIUM) → 0.128 (LOW) ✓
+- `humanize transform /tmp/test_humanizer.docx --stages prescan,determ,postscan` — saved `/tmp/test_humanizer_humanized.docx`, vocab swaps confirmed in output ✓
+
+**Next manual steps for the owner (not automated):**
+1. Push to GitHub and create a public release with `packaging/build-release.sh`.
+2. Replace `YOUR_REPO` placeholders in `install.sh` and `README.md` with the real GitHub URL.
+3. Follow `MONETIZATION.md` to set up the Gumroad product.

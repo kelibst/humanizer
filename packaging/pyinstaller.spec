@@ -58,6 +58,7 @@ datas += collect_data_files("textual")
 # statically.
 datas += collect_data_files("anthropic")
 datas += collect_data_files("openai")
+datas += collect_data_files("docx")
 # NOTE: ``addons/google-docs/`` is intentionally NOT bundled — the Apps Script
 # add-in is a separately distributable artefact (see addons/google-docs/README.md
 # and the "Install the Google Docs add-in" section of top-level README.md).
@@ -100,7 +101,12 @@ hiddenimports = [
     "anthropic",
     "openai",
     "google.generativeai",
+    # python-docx .docx support (Agent B v1.2).
+    "docx",
+    "lxml",
+    "lxml.etree",
 ]
+hiddenimports += collect_submodules("docx")
 # Pull in every submodule of our own package so lazy ``importlib`` calls
 # (e.g. the stage3 deterministic loader, the backends registry, the TUI
 # screen routing) all resolve at runtime.

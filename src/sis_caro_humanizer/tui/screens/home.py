@@ -44,6 +44,10 @@ class HomeScreen(Screen):
     }
     #home-title {
         text-style: bold;
+        margin-bottom: 0;
+    }
+    #home-welcome {
+        color: $success;
         margin-bottom: 1;
     }
     #home-list {
@@ -54,6 +58,10 @@ class HomeScreen(Screen):
     def compose(self) -> ComposeResult:
         with Container(id="home-card"):
             yield Static("welcome to humanizer — what would you like to do?", id="home-title")
+            yield Static(
+                "No profile needed — open Transform (T) to humanize any file.",
+                id="home-welcome",
+            )
             yield ListView(
                 *(ListItem(Label(text), id=f"entry-{i}") for i, (text, _) in enumerate(HOME_ENTRIES)),
                 id="home-list",
