@@ -514,48 +514,114 @@ function registerSectionCommands(ctx) {
     }));
     // ---- humanizer.exportDocx ----
     ctx.subscriptions.push(vscode.commands.registerCommand("humanizer.exportDocx", async () => {
-        const editor = (0, activeEditorTracker_1.getLastMarkdownEditor)() ?? vscode.window.activeTextEditor;
-        if (!editor || editor.document.languageId !== "markdown") {
-            vscode.window.showWarningMessage("Open a Markdown file to export to .docx.");
+        // Show a file picker so the user can choose any .md file, not just
+        // the last-active editor.  Pre-navigate to the active editor's dir
+        // if one is open, otherwise the first workspace folder.
+        const activeEditor = (0, activeEditorTracker_1.getLastMarkdownEditor)() ?? vscode.window.activeTextEditor;
+        const defaultUri = activeEditor
+            ? vscode.Uri.file(path.dirname(activeEditor.document.uri.fsPath))
+            : vscode.workspace.workspaceFolders?.[0]?.uri;
+        const picked = await vscode.window.showOpenDialog({
+            canSelectMany: false,
+            filters: { Markdown: ["md"] },
+            defaultUri,
+            openLabel: "Export to .docx",
+        });
+        if (!picked || picked.length === 0) {
             return;
         }
-        // CONTRACT §7: determine paths
-        const inputPath = editor.document.uri.fsPath;
+        // CONTRACT §7: determine paths from the picked file
+        const inputPath = picked[0].fsPath;
         const dir = path.dirname(inputPath);
         const stem = path.basename(inputPath, path.extname(inputPath));
         const outputPath = path.join(dir, `${stem}_humanized.docx`);
         const cfg = _cfg();
-        const binaryPath = cfg.binaryPath;
-        await vscode.window.withProgress({
-            location: vscode.ProgressLocation.Notification,
-            title: "Humanizer: exporting to .docx…",
-            cancellable: false,
-        }, async () => {
-            await new Promise((resolve, reject) => {
-                // CONTRACT §7: use execFile (not exec) to avoid shell injection
-                (0, child_process_1.execFile)(binaryPath, [
-                    "transform",
-                    inputPath,
-                    "--stages",
-                    "prescan,determ,postscan",
-                    "--out",
-                    outputPath,
-                ], { env: process.env }, (error, _stdout, stderr) => {
-                    if (error) {
-                        const detail = stderr
-                            ? stderr.slice(0, 300)
-                            : error.message;
-                        reject(new Error(detail));
+        // Stage → target percentage reached when that stage completes.
+        const STAGE_PCT = {
+            prescan: 20,
+            determ: 78,
+            postscan: 90,
+        };
+        // determ has 8 sub-steps; split its 58 pp (20→78) into equal slices.
+        const DETERM_STEP_INC = Math.round((78 - 20) / 8);
+        let pct = 0;
+        try {
+            await vscode.window.withProgress({
+                location: vscode.ProgressLocation.Notification,
+                title: "Humanizer: exporting to .docx",
+                cancellable: false,
+            }, async (progress) => {
+                const advance = (to, message) => {
+                    const inc = Math.max(0, to - pct);
+                    progress.report({ increment: inc, message });
+                    pct = to;
+                };
+                advance(0, "reading file…");
+                const text = fs.readFileSync(inputPath, "utf8");
+                // Try the daemon streaming path first (gives stage-by-stage
+                // progress). If the daemon is offline (status 0) fall back to
+                // the CLI binary which writes the .docx directly.
+                let usedDaemon = true;
+                try {
+                    const result = await (0, daemonClient_1.transformTextStream)(text, { profile: cfg.profile, backend: cfg.backend, stages: ["prescan", "determ", "postscan"] }, (evt) => {
+                        if (evt.type === "stage_start") {
+                            const labels = {
+                                prescan: "scanning…",
+                                determ: "rewriting…",
+                                postscan: "scoring result…",
+                            };
+                            progress.report({ message: labels[evt.stage] ?? `${evt.stage}…` });
+                        }
+                        else if (evt.type === "stage_done") {
+                            const target = STAGE_PCT[evt.stage];
+                            if (target !== undefined) {
+                                advance(target, `${evt.stage} done (${evt.elapsed_s.toFixed(1)}s)`);
+                            }
+                        }
+                        else if (evt.type === "determ_step") {
+                            advance(Math.min(78, pct + DETERM_STEP_INC), `rewriting: ${evt.step}…`);
+                        }
+                    });
+                    advance(92, "writing .docx…");
+                    await (0, daemonClient_1.exportDocxToFile)(result.output, outputPath);
+                    advance(100, "done");
+                }
+                catch (daemonErr) {
+                    // Only fall back when the daemon is unreachable (status 0).
+                    // Any other error (401, 502, etc.) is a real error — rethrow.
+                    if (!(daemonErr instanceof daemonClient_1.DaemonError) || daemonErr.status !== 0) {
+                        throw daemonErr;
                     }
-                    else {
-                        resolve();
-                    }
-                });
+                    usedDaemon = false;
+                    advance(10, "daemon offline — using local binary…");
+                    await new Promise((resolve, reject) => {
+                        (0, child_process_1.execFile)(cfg.binaryPath, ["transform", inputPath, "--stages", "prescan,determ,postscan", "--out", outputPath], { env: process.env }, (error, _stdout, stderr) => {
+                            if (error) {
+                                reject(new Error(stderr ? stderr.slice(0, 300) : error.message));
+                            }
+                            else {
+                                resolve();
+                            }
+                        });
+                    });
+                    advance(100, "done");
+                }
+                _log(`DOCX exported via ${usedDaemon ? "daemon" : "binary"} → ${outputPath}`);
             });
-        });
-        // Open the containing folder on success
-        await vscode.commands.executeCommand("revealFileInOS", vscode.Uri.file(outputPath));
-        vscode.window.showInformationMessage(`Exported: ${path.basename(outputPath)}`);
+            // Log the full path to the output channel so it is always findable.
+            _log(`DOCX exported → ${outputPath}`);
+            // Show a persistent notification with the full path and action buttons.
+            const action = await vscode.window.showInformationMessage(`Exported to: ${outputPath}`, "Open Folder", "Copy Path");
+            if (action === "Open Folder") {
+                await vscode.commands.executeCommand("revealFileInOS", vscode.Uri.file(outputPath));
+            }
+            else if (action === "Copy Path") {
+                await vscode.env.clipboard.writeText(outputPath);
+            }
+        }
+        catch (err) {
+            _showError(err);
+        }
     }));
     // ---- humanizer.showProgress ----
     ctx.subscriptions.push(vscode.commands.registerCommand("humanizer.showProgress", async () => {

@@ -74,73 +74,10 @@ _REFS_HEADING_RE = re.compile(
 
 
 # ---------------------------------------------------------------------------
-# id derivation (CONTRACT §1.6)
+# id derivation (CONTRACT §1.6) — implementation moved to ref_ids.py
 # ---------------------------------------------------------------------------
 
-_AUTHOR_LASTNAME_RE = re.compile(r"^([\w\-']+)")
-
-
-def _last_name_from_author(author: str) -> str:
-    """Extract a last name from an author string.
-
-    Accepts ``"Smith, J."`` (APA last-first), ``"J. Smith"``, or plain
-    ``"Smith"``. Falls back to the leading alphanumeric token.
-    """
-    a = (author or "").strip()
-    if not a:
-        return "anon"
-    if "," in a:
-        # APA last-first
-        last = a.split(",", 1)[0].strip()
-    else:
-        # "J. Smith" / "John Smith" / "Smith"
-        parts = a.split()
-        last = parts[-1] if parts else a
-    m = _AUTHOR_LASTNAME_RE.match(last)
-    if not m:
-        return re.sub(r"\W+", "", last).lower() or "anon"
-    return m.group(1).lower().replace("'", "")
-
-
-def _suffix_chars() -> Iterable[str]:
-    """Yield "", "a", "b", "c", ..., "z", "aa", "ab", ..."""
-    yield ""
-    import string
-
-    letters = string.ascii_lowercase
-    for c in letters:
-        yield c
-    for c1 in letters:
-        for c2 in letters:
-            yield c1 + c2
-
-
-def derive_id(ref: Reference, existing: Iterable[Reference] | None = None) -> str:
-    """Derive ``lastauthor_year[a|b|c…]`` ensuring no collision with ``existing``.
-
-    Uses the first author. ``existing`` is filtered to skip a record that
-    matches the input on ``authors``+``year``+``title`` (so calling
-    ``derive_id`` for an in-place upsert keeps the same id).
-    """
-    last = _last_name_from_author(ref.authors[0]) if ref.authors else "anon"
-    base = f"{last}_{ref.year}"
-    existing = list(existing or [])
-    same_as_input: set[str] = set()
-    for r in existing:
-        if r.year == ref.year and r.title == ref.title and r.authors == ref.authors:
-            same_as_input.add(r.id)
-    taken = {r.id for r in existing} - same_as_input
-    for suffix in _suffix_chars():
-        candidate = base + suffix
-        if candidate not in taken:
-            return candidate
-    # Astronomically unlikely; fall back to a numeric suffix.
-    i = 1
-    while True:
-        candidate = f"{base}_{i}"
-        if candidate not in taken:
-            return candidate
-        i += 1
+from .ref_ids import derive_id, _last_name_from_author, _suffix_chars  # noqa: F401
 
 
 # ---------------------------------------------------------------------------
@@ -406,66 +343,10 @@ def update_markdown_references_block(
 
 
 # ---------------------------------------------------------------------------
-# Orphan-key parser (CONTRACT v1.5 §1)
+# Orphan-key parser (CONTRACT v1.5 §1) — implementation moved to citation_keys.py
 # ---------------------------------------------------------------------------
 
-_ORPHAN_RE = re.compile(
-    r"""
-    ^\(                             # opening paren
-    (?P<names>                      # one or more author name chunks
-        [A-Z][A-Za-z'\-]+          # first last-name (capital start)
-        (?:                         # optional additional names
-            (?:\s*&\s*|\s+and\s+)  # separator: & or and
-            [A-Z][A-Za-z'\-]+      # next last-name
-        )*
-        (?:\s+et\s+al\.?)?         # optional "et al."
-    )
-    ,\s*
-    (?P<year>\d{4})                 # 4-digit year
-    (?:,\s*[^)]+)?                  # optional page/paragraph suffix: ", p. 42"
-    \)$                             # closing paren
-    """,
-    re.VERBOSE | re.IGNORECASE,
-)
-
-_NAME_SPLIT_RE = re.compile(r"\s*(?:&|and)\s*", re.IGNORECASE)
-
-
-def parse_orphan_key(key: str) -> tuple[list[str], int]:
-    """Parse an in-text citation key such as "(Smith et al., 2020)".
-
-    Accepted forms:
-    - "(Smith, 2020)"
-    - "(Smith & Doe, 2020)"
-    - "(Smith and Doe, 2020)"
-    - "(Smith et al., 2020)"
-    - "(Smith, 2020, p. 42)"    page/paragraph suffix is stripped
-
-    Returns:
-        (last_names, year) — last_names is a list of last-name strings,
-        year is the 4-digit integer.
-
-    Raises:
-        ValueError — if *key* does not match the expected pattern.
-    """
-    key = (key or "").strip()
-    m = _ORPHAN_RE.match(key)
-    if not m:
-        raise ValueError(f"Cannot parse orphan citation key: {key!r}")
-
-    year = int(m.group("year"))
-    names_raw = m.group("names").strip()
-
-    # Strip trailing "et al." variant
-    names_raw = re.sub(r"\s+et\s+al\.?$", "", names_raw, flags=re.IGNORECASE).strip()
-
-    # Split on & / and
-    parts = _NAME_SPLIT_RE.split(names_raw)
-    last_names = [p.strip() for p in parts if p.strip()]
-    if not last_names:
-        raise ValueError(f"No author names found in: {key!r}")
-
-    return last_names, year
+from .citation_keys import parse_orphan_key  # noqa: F401
 
 
 __all__ = [

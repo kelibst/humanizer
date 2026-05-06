@@ -103,7 +103,18 @@ function activate(ctx) {
     }
     // ---- Track A commands ----
     // humanizer.startDaemon — run `humanize serve` in an integrated terminal.
-    ctx.subscriptions.push(vscode.commands.registerCommand("humanizer.startDaemon", () => {
+    ctx.subscriptions.push(vscode.commands.registerCommand("humanizer.startDaemon", async () => {
+        // Guard: if the daemon is already reachable (e.g. started by another
+        // VS Code instance), do not spawn a second process on the same port.
+        try {
+            await (0, daemonClient_1.healthCheck)();
+            vscode.window.showInformationMessage("Humanizer daemon is already running. No new process started.");
+            vscode.window.terminals.find((t) => t.name === "Humanizer Daemon")?.show();
+            return;
+        }
+        catch {
+            // Not reachable — proceed to start.
+        }
         const cfg = vscode.workspace.getConfiguration("humanizer");
         const binaryPath = cfg.get("binaryPath", "humanize");
         // Reuse an existing terminal if one is already open.

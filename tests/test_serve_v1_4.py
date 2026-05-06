@@ -176,7 +176,7 @@ def test_llm_run_unavailable_backend_returns_502(client, monkeypatch):
             raise NotImplementedError
 
     monkeypatch.setattr(
-        "sis_caro_humanizer.serve.app.get_backend",
+        "sis_caro_humanizer.serve.routes.benchmark.get_backend",
         lambda name: FakeBackend(),
     )
     r = client.post(
@@ -197,7 +197,7 @@ def test_llm_run_happy_path(client, monkeypatch):
             return f"RESPONSE: {prompt}"
 
     monkeypatch.setattr(
-        "sis_caro_humanizer.serve.app.get_backend",
+        "sis_caro_humanizer.serve.routes.benchmark.get_backend",
         lambda name: FakeBackend(),
     )
     r = client.post(
@@ -250,7 +250,7 @@ def test_benchmark_with_external_header(client, monkeypatch):
             return DetectorResult(score=0.78, band="high", confidence=0.92)
 
     monkeypatch.setattr(
-        "sis_caro_humanizer.serve.app.get_detector",
+        "sis_caro_humanizer.serve.routes.benchmark.get_detector",
         lambda name: _FakeDetector(),
     )
     r = client.post(
@@ -287,7 +287,7 @@ def test_benchmark_detector_failure_does_not_abort(client, monkeypatch):
             return _BadDetector()
         return _GoodDetector()
 
-    monkeypatch.setattr("sis_caro_humanizer.serve.app.get_detector", picker)
+    monkeypatch.setattr("sis_caro_humanizer.serve.routes.benchmark.get_detector", picker)
     r = client.post(
         "/v1/benchmark",
         json={"text": "x" * 100, "detectors": ["gptzero", "sapling"]},

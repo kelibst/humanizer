@@ -15,6 +15,7 @@ from sis_caro_humanizer.docx_bridge import (
     diff_text_sections,
     extract_text,
     extract_word_comments,
+    new_docx_from_markdown,
     write_docx,
 )
 
@@ -49,6 +50,40 @@ def test_write_docx_replaces_text(tmp_path: Path) -> None:
     texts = [p.text for p in result_doc.paragraphs if p.text.strip()]
     assert texts[0] == "Humanized first paragraph."
     assert texts[1] == "Humanized second paragraph."
+
+
+def test_new_docx_from_markdown_creates_headings(tmp_path: Path) -> None:
+    """new_docx_from_markdown should produce heading paragraphs for # / ## lines."""
+    md = "# Introduction\n\nSome body text here.\n\n## Background\n\nMore text."
+    out_path = tmp_path / "out.docx"
+    new_docx_from_markdown(md, out_path)
+
+    result_doc = Document(str(out_path))
+    styles = [p.style.name for p in result_doc.paragraphs if p.text.strip()]
+    assert any("Heading 1" in s for s in styles), f"No Heading 1 found in {styles}"
+    assert any("Heading 2" in s for s in styles), f"No Heading 2 found in {styles}"
+    texts = [p.text for p in result_doc.paragraphs if p.text.strip()]
+    assert "Introduction" in texts
+    assert "Background" in texts
+    assert "Some body text here." in texts
+
+
+def test_new_docx_from_markdown_bold_italic(tmp_path: Path) -> None:
+    """new_docx_from_markdown should create bold and italic runs."""
+    md = "This has **bold** and *italic* text."
+    out_path = tmp_path / "fmt.docx"
+    new_docx_from_markdown(md, out_path)
+
+    result_doc = Document(str(out_path))
+    paras = [p for p in result_doc.paragraphs if p.text.strip()]
+    assert paras, "Expected at least one paragraph"
+    runs = paras[0].runs
+    bold_runs = [r for r in runs if r.bold]
+    italic_runs = [r for r in runs if r.italic]
+    assert bold_runs, "Expected a bold run"
+    assert italic_runs, "Expected an italic run"
+    assert bold_runs[0].text == "bold"
+    assert italic_runs[0].text == "italic"
 
 
 def test_extract_text_missing_dep(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:

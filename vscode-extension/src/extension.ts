@@ -15,6 +15,7 @@ import {
   scoreText,
   transformText,
   suggestText,
+  healthCheck,
   DaemonError,
 } from "./daemonClient";
 import { registerDiagnostics } from "./diagnostics";
@@ -90,7 +91,20 @@ export function activate(ctx: vscode.ExtensionContext): void {
 
   // humanizer.startDaemon — run `humanize serve` in an integrated terminal.
   ctx.subscriptions.push(
-    vscode.commands.registerCommand("humanizer.startDaemon", () => {
+    vscode.commands.registerCommand("humanizer.startDaemon", async () => {
+      // Guard: if the daemon is already reachable (e.g. started by another
+      // VS Code instance), do not spawn a second process on the same port.
+      try {
+        await healthCheck();
+        vscode.window.showInformationMessage(
+          "Humanizer daemon is already running. No new process started."
+        );
+        vscode.window.terminals.find((t) => t.name === "Humanizer Daemon")?.show();
+        return;
+      } catch {
+        // Not reachable — proceed to start.
+      }
+
       const cfg = vscode.workspace.getConfiguration("humanizer");
       const binaryPath = cfg.get<string>("binaryPath", "humanize");
 
