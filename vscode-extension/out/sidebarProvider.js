@@ -46,6 +46,7 @@ const vscode = __importStar(require("vscode"));
 const path = __importStar(require("path"));
 const fs = __importStar(require("fs"));
 const daemonClient_1 = require("./daemonClient");
+const activeEditorTracker_1 = require("./activeEditorTracker");
 class SidebarProvider {
     /**
      * Register a research-surface message handler. Returns a Disposable that
@@ -220,7 +221,7 @@ class SidebarProvider {
         }
     }
     async _onTransform(webview, includeLlm) {
-        const editor = vscode.window.activeTextEditor;
+        const editor = (0, activeEditorTracker_1.getLastMarkdownEditor)() ?? vscode.window.activeTextEditor;
         if (!editor || editor.document.languageId !== "markdown") {
             webview.postMessage({ type: "error", message: "No active markdown file." });
             return;
@@ -272,7 +273,7 @@ class SidebarProvider {
         }
     }
     async _onSuggest(webview) {
-        const editor = vscode.window.activeTextEditor;
+        const editor = (0, activeEditorTracker_1.getLastMarkdownEditor)() ?? vscode.window.activeTextEditor;
         if (!editor || editor.document.languageId !== "markdown") {
             webview.postMessage({ type: "error", message: "No active markdown file." });
             return;
@@ -300,7 +301,7 @@ class SidebarProvider {
         }
     }
     async _onApplyCandidate(text) {
-        const editor = vscode.window.activeTextEditor;
+        const editor = (0, activeEditorTracker_1.getLastMarkdownEditor)() ?? vscode.window.activeTextEditor;
         if (!editor || !text) {
             return;
         }
@@ -333,7 +334,7 @@ class SidebarProvider {
     // Utilities
     // -------------------------------------------------------------------------
     _getActiveText() {
-        const editor = vscode.window.activeTextEditor;
+        const editor = (0, activeEditorTracker_1.getLastMarkdownEditor)() ?? vscode.window.activeTextEditor;
         if (!editor || editor.document.languageId !== "markdown") {
             return undefined;
         }

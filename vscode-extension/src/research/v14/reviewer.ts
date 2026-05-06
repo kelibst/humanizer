@@ -9,12 +9,13 @@
 
 import * as vscode from "vscode";
 import { reviewer as runReviewer, DaemonError } from "../../daemonClient";
+import { getLastMarkdownEditor } from "../../activeEditorTracker";
 
 export async function handleReviewer(
   msg: Record<string, unknown>,
   webview: vscode.Webview
 ): Promise<void> {
-  const editor = vscode.window.activeTextEditor;
+  const editor = getLastMarkdownEditor() ?? vscode.window.activeTextEditor;
   if (!editor || editor.document.languageId !== "markdown") {
     webview.postMessage({
       type: "reviewer:error",

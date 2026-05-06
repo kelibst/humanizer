@@ -48,6 +48,7 @@ exports.handleInspector = handleInspector;
 const vscode = __importStar(require("vscode"));
 const daemonClient_1 = require("../../daemonClient");
 const sectionProvider_1 = require("../../sectionProvider");
+const activeEditorTracker_1 = require("../../activeEditorTracker");
 const TYPE_BY_TITLE = [
     [/^introduction$/i, "introduction"],
     [/^background$/i, "introduction"],
@@ -91,7 +92,7 @@ function _findSectionAtCursor(editor) {
     return { node: match, text: bodyLines.join("\n") };
 }
 async function handleInspector(_msg, webview) {
-    const editor = vscode.window.activeTextEditor;
+    const editor = (0, activeEditorTracker_1.getLastMarkdownEditor)() ?? vscode.window.activeTextEditor;
     if (!editor || editor.document.languageId !== "markdown") {
         webview.postMessage({
             type: "inspector:error",

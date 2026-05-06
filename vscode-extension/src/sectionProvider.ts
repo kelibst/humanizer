@@ -12,6 +12,7 @@
  */
 
 import * as vscode from "vscode";
+import { getLastMarkdownEditor } from "./activeEditorTracker";
 
 // ---------------------------------------------------------------------------
 // Types (CONTRACT §2)
@@ -439,7 +440,7 @@ export class SectionProvider
   // ---- Private ----
 
   private _parseActive(): void {
-    const editor = vscode.window.activeTextEditor;
+    const editor = getLastMarkdownEditor() ?? vscode.window.activeTextEditor;
     if (!editor || editor.document.languageId !== "markdown") {
       this._nodes = [];
       this._onDidChangeTreeData.fire();

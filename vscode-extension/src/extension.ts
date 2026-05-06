@@ -7,6 +7,7 @@
  * has not yet been merged.
  */
 
+import * as path from "path";
 import * as vscode from "vscode";
 import { SidebarProvider } from "./sidebarProvider";
 import { StatusBarManager } from "./statusBar";
@@ -23,6 +24,11 @@ import { registerLauncher } from "./launcher";
 import { registerWelcome } from "./welcome";
 import { openDashboard } from "./dashboard";
 import { registerV14ResearchSurfaces } from "./research/v14/index";
+import {
+  registerActiveEditorTracker,
+  getLastMarkdownEditor,
+} from "./activeEditorTracker";
+import { registerCitationHoverProvider } from "./citationHoverProvider";
 
 // ---------------------------------------------------------------------------
 // Suppress self-signed cert errors for the local daemon.
@@ -42,6 +48,14 @@ function _patchTls(): void {
 
 export function activate(ctx: vscode.ExtensionContext): void {
   _patchTls();
+
+  // ---- Active editor tracker (v1.5) ----
+  // Register before anything else so _last is seeded from the start.
+  try {
+    registerActiveEditorTracker(ctx);
+  } catch (err) {
+    _logSetupError("activeEditorTracker", err);
+  }
 
   // ---- Sidebar ----
   const sidebarProvider = new SidebarProvider(ctx.extensionUri);
@@ -64,6 +78,13 @@ export function activate(ctx: vscode.ExtensionContext): void {
   registerDiagnostics(ctx, statusBar);
   registerHoverProvider(ctx);
   registerCodeActionsProvider(ctx);
+
+  // ---- Citation hover provider (v1.5) ----
+  try {
+    registerCitationHoverProvider(ctx);
+  } catch (err) {
+    _logSetupError("citationHoverProvider", err);
+  }
 
   // ---- Track A commands ----
 
@@ -91,7 +112,7 @@ export function activate(ctx: vscode.ExtensionContext): void {
   // humanizer.scoreFile — score the active .md file and update the status bar.
   ctx.subscriptions.push(
     vscode.commands.registerCommand("humanizer.scoreFile", async () => {
-      const editor = vscode.window.activeTextEditor;
+      const editor = getLastMarkdownEditor() ?? vscode.window.activeTextEditor;
       if (!editor || editor.document.languageId !== "markdown") {
         vscode.window.showWarningMessage("Open a Markdown file to score.");
         return;
@@ -101,7 +122,7 @@ export function activate(ctx: vscode.ExtensionContext): void {
         const cfg = vscode.workspace.getConfiguration("humanizer");
         const profile = cfg.get<string>("profile");
         const result = await scoreText(editor.document.getText(), profile);
-        statusBar.updateScore(result.score, result.band);
+        statusBar.updateScore(result.score, result.band, path.basename(editor.document.uri.fsPath));
         sidebarProvider.postScore(result.score, result.band, result.features);
       } catch (err: unknown) {
         _showError(err);
@@ -112,7 +133,7 @@ export function activate(ctx: vscode.ExtensionContext): void {
   // humanizer.transformSelection — transform selected text and replace in editor.
   ctx.subscriptions.push(
     vscode.commands.registerCommand("humanizer.transformSelection", async () => {
-      const editor = vscode.window.activeTextEditor;
+      const editor = getLastMarkdownEditor() ?? vscode.window.activeTextEditor;
       if (!editor || editor.document.languageId !== "markdown") {
         vscode.window.showWarningMessage("Open a Markdown file to transform.");
         return;
@@ -147,7 +168,7 @@ export function activate(ctx: vscode.ExtensionContext): void {
             await editor.edit((eb) => {
               eb.replace(selection, result.output);
             });
-            statusBar.updateScore(result.post_score, _scoreToBand(result.post_score));
+            statusBar.updateScore(result.post_score, _scoreToBand(result.post_score), path.basename(editor.document.uri.fsPath));
             if (result.notes.length > 0) {
               vscode.window.setStatusBarMessage(`Humanizer: ${result.notes[0]}`, 4000);
             }
@@ -162,7 +183,7 @@ export function activate(ctx: vscode.ExtensionContext): void {
   // humanizer.suggestSelection — open sidebar with 3 suggestions for selection.
   ctx.subscriptions.push(
     vscode.commands.registerCommand("humanizer.suggestSelection", async () => {
-      const editor = vscode.window.activeTextEditor;
+      const editor = getLastMarkdownEditor() ?? vscode.window.activeTextEditor;
       if (!editor || editor.document.languageId !== "markdown") {
         vscode.window.showWarningMessage("Open a Markdown file to get suggestions.");
         return;

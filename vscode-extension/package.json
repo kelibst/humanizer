@@ -101,6 +101,21 @@
         "command": "humanizer.openWelcome",
         "title": "Show Welcome",
         "category": "Humanizer"
+      },
+      {
+        "command": "humanizer.importBibtex",
+        "title": "Import BibTeX",
+        "category": "Humanizer"
+      },
+      {
+        "command": "humanizer.exportBibtex",
+        "title": "Export BibTeX",
+        "category": "Humanizer"
+      },
+      {
+        "command": "humanizer.resolveAllOrphans",
+        "title": "Resolve All Orphan Citations",
+        "category": "Humanizer"
       }
     ],
     "keybindings": [

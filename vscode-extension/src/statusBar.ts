@@ -6,6 +6,7 @@
  * and the user saves a .md file.
  */
 
+import * as path from "path";
 import * as vscode from "vscode";
 import { scoreText, DaemonError } from "./daemonClient";
 
@@ -34,6 +35,7 @@ export class StatusBarManager implements vscode.Disposable {
   private _saveListener: vscode.Disposable | undefined;
   private _inflight = false;
   private _disposables: vscode.Disposable[] = [];
+  private _currentFile: string | undefined;
 
   constructor() {
     this._item = vscode.window.createStatusBarItem(
@@ -71,6 +73,7 @@ export class StatusBarManager implements vscode.Disposable {
       return;
     }
 
+    this._currentFile = path.basename(document.uri.fsPath);
     this._showBusy();
     this._inflight = true;
     try {
@@ -93,7 +96,10 @@ export class StatusBarManager implements vscode.Disposable {
   }
 
   /** Update the status bar directly from a known score (e.g. after transform). */
-  updateScore(score: number, band: "low" | "medium" | "high"): void {
+  updateScore(score: number, band: "low" | "medium" | "high", fileName?: string): void {
+    if (fileName) {
+      this._currentFile = fileName;
+    }
     this._showScore(score, band);
   }
 
@@ -102,13 +108,16 @@ export class StatusBarManager implements vscode.Disposable {
    * text without requiring a save. Respects `humanizer.idleScore` (default
    * `true`) and the same single-inflight rule as `scoreDocument`.
    */
-  async refreshFromText(text: string): Promise<void> {
+  async refreshFromText(text: string, fileName?: string): Promise<void> {
     const cfg = vscode.workspace.getConfiguration("humanizer");
     if (!cfg.get<boolean>("idleScore", true)) {
       return;
     }
     if (this._inflight) {
       return;
+    }
+    if (fileName) {
+      this._currentFile = fileName;
     }
     this._inflight = true;
     this._showBusy();
@@ -129,6 +138,7 @@ export class StatusBarManager implements vscode.Disposable {
 
   /** Reset to idle (e.g. when no .md file is active). */
   reset(): void {
+    this._currentFile = undefined;
     this._showIdle();
   }
 
@@ -168,6 +178,7 @@ export class StatusBarManager implements vscode.Disposable {
 
   private _showIdle(): void {
     this._item.text = "AI: ---";
+    this._item.tooltip = "AI-risk score — click to refresh";
     this._item.backgroundColor = undefined;
     this._item.color = undefined;
   }
@@ -183,8 +194,10 @@ export class StatusBarManager implements vscode.Disposable {
     const bandUpper = band.toUpperCase();
     const icon = BAND_ICONS[band] ?? "$(circle-outline)";
     this._item.text = `${icon} AI: ${scoreStr} ${bandUpper}`;
+    this._item.tooltip = this._currentFile
+      ? `AI-risk score for ${this._currentFile} — click to refresh`
+      : "AI-risk score — click to refresh";
     this._item.backgroundColor = BAND_COLORS[band];
-    // Reset any explicit foreground colour — the background colour sets the theme.
     this._item.color = undefined;
   }
 }

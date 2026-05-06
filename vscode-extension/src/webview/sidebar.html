@@ -123,11 +123,16 @@
       <div id="hz-outline-empty" class="hz-empty">No headings.</div>
     </details>
 
-    <!-- Citations panel (v1.3) -->
+    <!-- Citations panel (v1.3 + v1.5) -->
     <details id="hz-citations-panel" class="hz-panel hz-research-panel">
       <summary class="hz-panel-title">Citations</summary>
       <div class="hz-research-controls">
         <button id="hz-citations-refresh" class="hz-btn hz-btn--secondary">Refresh</button>
+        <!-- v1.5: resolve-all button -->
+        <button id="hz-citations-resolve-all" class="hz-btn hz-btn--secondary"
+                title="Create stub references for all orphan citations">
+          Resolve all orphans
+        </button>
       </div>
       <div class="hz-citations-section">
         <div class="hz-citations-head">Missing</div>
@@ -142,6 +147,24 @@
         <ul id="hz-citations-unused" class="hz-citations-list"></ul>
       </div>
       <div id="hz-citations-empty" class="hz-empty">Click Refresh to scan.</div>
+    </details>
+
+    <!-- v1.5 — Reference library panel -->
+    <details id="hz-refs-panel" class="hz-panel hz-research-panel">
+      <summary class="hz-panel-title">Reference library</summary>
+      <div class="hz-research-controls">
+        <button id="hz-refs-refresh" class="hz-btn hz-btn--secondary">Refresh</button>
+        <button id="hz-refs-import" class="hz-btn hz-btn--secondary"
+                title="Import references from a .bib file">Import BibTeX</button>
+        <button id="hz-refs-export" class="hz-btn hz-btn--secondary"
+                title="Export all references as a .bib file">Export BibTeX</button>
+      </div>
+      <div class="hz-research-controls">
+        <input type="text" id="hz-refs-search" placeholder="Filter references…"
+               style="flex:1;padding:2px 6px;background:var(--vscode-input-background);color:var(--vscode-input-foreground);border:1px solid var(--vscode-input-border);border-radius:3px;">
+      </div>
+      <ul id="hz-refs-list" class="hz-citations-list"></ul>
+      <div id="hz-refs-empty" class="hz-empty">Click Refresh to load references.</div>
     </details>
 
     <!-- Readability panel (v1.3) -->
@@ -491,11 +514,48 @@
     bindResearchPanel('hz-citations-refresh', 'citations.fetch');
     bindResearchPanel('hz-readability-refresh', 'readability.fetch');
 
+    // v1.5 — resolve-all orphans button
+    const _resolveAllBtn = el('hz-citations-resolve-all');
+    if (_resolveAllBtn) {
+      _resolveAllBtn.addEventListener('click', () => {
+        vscode.postMessage({ type: 'citations.resolveAll' });
+        addLog('Resolving all orphan citations…', 'idle');
+      });
+    }
+
+    // v1.5 — Reference library buttons
+    bindResearchPanel('hz-refs-refresh', 'refs.list');
+    const _refsImportBtn = el('hz-refs-import');
+    if (_refsImportBtn) {
+      _refsImportBtn.addEventListener('click', () => {
+        vscode.postMessage({ type: 'refs.importBibtex' });
+      });
+    }
+    const _refsExportBtn = el('hz-refs-export');
+    if (_refsExportBtn) {
+      _refsExportBtn.addEventListener('click', () => {
+        vscode.postMessage({ type: 'refs.exportBibtex' });
+      });
+    }
+    // Client-side search filter
+    const _refsSearchInput = el('hz-refs-search');
+    if (_refsSearchInput) {
+      _refsSearchInput.addEventListener('input', () => {
+        const q = (_refsSearchInput.value || '').toLowerCase();
+        const items = el('hz-refs-list').querySelectorAll('.hz-refs-item');
+        items.forEach((item) => {
+          const text = item.textContent.toLowerCase();
+          item.style.display = text.includes(q) ? '' : 'none';
+        });
+      });
+    }
+
     // Auto-fetch when a research panel is opened for the first time.
     const researchPanels = [
       { el: el('hz-outline-panel'),     fetchType: 'outline.fetch',    once: false },
       { el: el('hz-citations-panel'),   fetchType: 'citations.fetch',  once: false },
       { el: el('hz-readability-panel'), fetchType: 'readability.fetch', once: false },
+      { el: el('hz-refs-panel'),        fetchType: 'refs.list',         once: false },
     ];
     researchPanels.forEach((panel) => {
       if (!panel.el) { return; }
@@ -553,10 +613,34 @@
       });
       (orphans || []).forEach((entry) => {
         const li = document.createElement('li');
-        li.textContent = entry.key || '(orphan)';
-        li.addEventListener('click', () => {
+        li.style.display = 'flex';
+        li.style.alignItems = 'center';
+        li.style.gap = '6px';
+
+        const keySpan = document.createElement('span');
+        keySpan.style.flex = '1';
+        keySpan.textContent = entry.key || '(orphan)';
+        keySpan.title = 'Click to reveal in editor';
+        keySpan.style.cursor = 'pointer';
+        keySpan.addEventListener('click', () => {
           vscode.postMessage({ type: 'citations.reveal', start: entry.start, end: entry.end });
         });
+
+        // v1.5: "Resolve →" button
+        const resolveBtn = document.createElement('button');
+        resolveBtn.textContent = 'Resolve →';
+        resolveBtn.className = 'hz-btn hz-btn--secondary';
+        resolveBtn.style.fontSize = '0.75em';
+        resolveBtn.style.padding = '1px 5px';
+        resolveBtn.title = 'Create a stub reference for this orphan';
+        resolveBtn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          vscode.postMessage({ type: 'citations.resolveOrphan', key: entry.key });
+          addLog('Resolving orphan "' + escHtml(entry.key || '') + '"…', 'idle');
+        });
+
+        li.appendChild(keySpan);
+        li.appendChild(resolveBtn);
         o.appendChild(li);
       });
       (unused || []).forEach((entry) => {
@@ -877,10 +961,132 @@
         case 'llm:run:error':
           addLog('Backend send failed: ' + msg.message, 'err');
           break;
+        // v1.5 — reference library
+        case 'refs.data':
+          renderRefs(msg.refs || []);
+          break;
+        case 'refs.error':
+          renderRefs([]);
+          {
+            const empty = el('hz-refs-empty');
+            if (empty) {
+              empty.textContent = msg.message || 'Could not load references.';
+              empty.style.display = 'block';
+            }
+          }
+          addLog('Reference library: ' + (msg.message || 'error'), 'err');
+          break;
+        case 'refs.importDone':
+          addLog('BibTeX import: ' + (msg.imported || 0) + ' imported, ' +
+            (msg.skipped || 0) + ' skipped.', 'ok');
+          // Re-fetch the library after import
+          vscode.postMessage({ type: 'refs.list' });
+          break;
+        case 'refs.exportDone':
+          addLog('BibTeX exported to ' + (msg.path || 'file') + '.', 'ok');
+          break;
         default:
           break;
       }
     });
+
+    // -------------------------------------------------------------------------
+    // v1.5 — Reference library renderer
+    // -------------------------------------------------------------------------
+    function renderRefs(refs) {
+      const list = el('hz-refs-list');
+      const empty = el('hz-refs-empty');
+      if (!list) { return; }
+      list.innerHTML = '';
+      if (!refs || refs.length === 0) {
+        if (empty) { empty.textContent = 'No references.'; empty.style.display = 'block'; }
+        return;
+      }
+      if (empty) { empty.style.display = 'none'; }
+      // Reset search filter
+      const searchInput = el('hz-refs-search');
+      if (searchInput) { searchInput.value = ''; }
+
+      refs.forEach((ref) => {
+        const li = document.createElement('li');
+        li.className = 'hz-refs-item';
+        li.style.padding = '4px 0';
+        li.style.borderBottom = '1px solid var(--vscode-editorGroup-border)';
+        li.style.display = 'flex';
+        li.style.flexDirection = 'column';
+        li.style.gap = '2px';
+
+        const titleRow = document.createElement('div');
+        titleRow.style.display = 'flex';
+        titleRow.style.justifyContent = 'space-between';
+        titleRow.style.alignItems = 'flex-start';
+        titleRow.style.gap = '4px';
+
+        const titleEl = document.createElement('span');
+        titleEl.style.fontWeight = 'bold';
+        titleEl.style.flex = '1';
+        titleEl.textContent = ref.title || '(untitled)';
+
+        const btnRow = document.createElement('div');
+        btnRow.style.display = 'flex';
+        btnRow.style.gap = '4px';
+        btnRow.style.flexShrink = '0';
+
+        // Copy citation key button
+        const copyBtn = document.createElement('button');
+        copyBtn.textContent = 'Copy key';
+        copyBtn.className = 'hz-btn hz-btn--secondary';
+        copyBtn.style.fontSize = '0.72em';
+        copyBtn.style.padding = '1px 4px';
+        copyBtn.title = 'Copy citation key to clipboard';
+        copyBtn.addEventListener('click', () => {
+          vscode.postMessage({ type: 'refs.copyCitationKey', id: ref.id });
+        });
+
+        // DOI link button (only if ref has a DOI)
+        if (ref.doi) {
+          const doiBtn = document.createElement('button');
+          doiBtn.textContent = 'DOI';
+          doiBtn.className = 'hz-btn hz-btn--secondary';
+          doiBtn.style.fontSize = '0.72em';
+          doiBtn.style.padding = '1px 4px';
+          doiBtn.title = 'Open DOI in browser: ' + ref.doi;
+          doiBtn.addEventListener('click', () => {
+            vscode.postMessage({ type: 'refs.openDoi', doi: ref.doi });
+          });
+          btnRow.appendChild(doiBtn);
+        }
+
+        // Delete button
+        const delBtn = document.createElement('button');
+        delBtn.textContent = '✕';
+        delBtn.className = 'hz-btn hz-btn--secondary';
+        delBtn.style.fontSize = '0.72em';
+        delBtn.style.padding = '1px 4px';
+        delBtn.title = 'Delete this reference';
+        delBtn.addEventListener('click', () => {
+          vscode.postMessage({ type: 'refs.delete', id: ref.id });
+          addLog('Deleting reference ' + escHtml(ref.id || '') + '…', 'idle');
+        });
+
+        btnRow.insertBefore(copyBtn, btnRow.firstChild);
+        btnRow.appendChild(delBtn);
+        titleRow.appendChild(titleEl);
+        titleRow.appendChild(btnRow);
+
+        const metaEl = document.createElement('div');
+        metaEl.style.fontSize = '0.8em';
+        metaEl.style.color = 'var(--vscode-descriptionForeground)';
+        const authorStr = (ref.authors || []).slice(0, 2).join('; ') +
+          ((ref.authors || []).length > 2 ? ' et al.' : '');
+        metaEl.textContent = authorStr + (ref.year ? ' (' + ref.year + ')' : '') +
+          (ref.venue ? ' — ' + ref.venue : '');
+
+        li.appendChild(titleRow);
+        li.appendChild(metaEl);
+        list.appendChild(li);
+      });
+    }
 
     // -------------------------------------------------------------------------
     // Boot — tell the extension host we are ready so it sends config.

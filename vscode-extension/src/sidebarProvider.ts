@@ -15,6 +15,7 @@ import {
   transformText,
   suggestText,
 } from "./daemonClient";
+import { getLastMarkdownEditor } from "./activeEditorTracker";
 
 // ---------------------------------------------------------------------------
 // Types mirroring the webview message protocol
@@ -273,7 +274,7 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
   }
 
   private async _onTransform(webview: vscode.Webview, includeLlm: boolean): Promise<void> {
-    const editor = vscode.window.activeTextEditor;
+    const editor = getLastMarkdownEditor() ?? vscode.window.activeTextEditor;
     if (!editor || editor.document.languageId !== "markdown") {
       webview.postMessage({ type: "error", message: "No active markdown file." });
       return;
@@ -336,7 +337,7 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
   }
 
   private async _onSuggest(webview: vscode.Webview): Promise<void> {
-    const editor = vscode.window.activeTextEditor;
+    const editor = getLastMarkdownEditor() ?? vscode.window.activeTextEditor;
     if (!editor || editor.document.languageId !== "markdown") {
       webview.postMessage({ type: "error", message: "No active markdown file." });
       return;
@@ -368,7 +369,7 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
   }
 
   private async _onApplyCandidate(text: string): Promise<void> {
-    const editor = vscode.window.activeTextEditor;
+    const editor = getLastMarkdownEditor() ?? vscode.window.activeTextEditor;
     if (!editor || !text) {
       return;
     }
@@ -416,7 +417,7 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
   // -------------------------------------------------------------------------
 
   private _getActiveText(): string | undefined {
-    const editor = vscode.window.activeTextEditor;
+    const editor = getLastMarkdownEditor() ?? vscode.window.activeTextEditor;
     if (!editor || editor.document.languageId !== "markdown") {
       return undefined;
     }

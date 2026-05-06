@@ -41,6 +41,7 @@ var __importStar = (this && this.__importStar) || (function () {
 })();
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.StatusBarManager = void 0;
+const path = __importStar(require("path"));
 const vscode = __importStar(require("vscode"));
 const daemonClient_1 = require("./daemonClient");
 // ---------------------------------------------------------------------------
@@ -90,6 +91,7 @@ class StatusBarManager {
         if (document.languageId !== "markdown") {
             return;
         }
+        this._currentFile = path.basename(document.uri.fsPath);
         this._showBusy();
         this._inflight = true;
         try {
@@ -114,7 +116,10 @@ class StatusBarManager {
         }
     }
     /** Update the status bar directly from a known score (e.g. after transform). */
-    updateScore(score, band) {
+    updateScore(score, band, fileName) {
+        if (fileName) {
+            this._currentFile = fileName;
+        }
         this._showScore(score, band);
     }
     /**
@@ -122,13 +127,16 @@ class StatusBarManager {
      * text without requiring a save. Respects `humanizer.idleScore` (default
      * `true`) and the same single-inflight rule as `scoreDocument`.
      */
-    async refreshFromText(text) {
+    async refreshFromText(text, fileName) {
         const cfg = vscode.workspace.getConfiguration("humanizer");
         if (!cfg.get("idleScore", true)) {
             return;
         }
         if (this._inflight) {
             return;
+        }
+        if (fileName) {
+            this._currentFile = fileName;
         }
         this._inflight = true;
         this._showBusy();
@@ -150,6 +158,7 @@ class StatusBarManager {
     }
     /** Reset to idle (e.g. when no .md file is active). */
     reset() {
+        this._currentFile = undefined;
         this._showIdle();
     }
     dispose() {
@@ -183,6 +192,7 @@ class StatusBarManager {
     }
     _showIdle() {
         this._item.text = "AI: ---";
+        this._item.tooltip = "AI-risk score — click to refresh";
         this._item.backgroundColor = undefined;
         this._item.color = undefined;
     }
@@ -196,8 +206,10 @@ class StatusBarManager {
         const bandUpper = band.toUpperCase();
         const icon = BAND_ICONS[band] ?? "$(circle-outline)";
         this._item.text = `${icon} AI: ${scoreStr} ${bandUpper}`;
+        this._item.tooltip = this._currentFile
+            ? `AI-risk score for ${this._currentFile} — click to refresh`
+            : "AI-risk score — click to refresh";
         this._item.backgroundColor = BAND_COLORS[band];
-        // Reset any explicit foreground colour — the background colour sets the theme.
         this._item.color = undefined;
     }
 }

@@ -44,8 +44,9 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.handleReviewer = handleReviewer;
 const vscode = __importStar(require("vscode"));
 const daemonClient_1 = require("../../daemonClient");
+const activeEditorTracker_1 = require("../../activeEditorTracker");
 async function handleReviewer(msg, webview) {
-    const editor = vscode.window.activeTextEditor;
+    const editor = (0, activeEditorTracker_1.getLastMarkdownEditor)() ?? vscode.window.activeTextEditor;
     if (!editor || editor.document.languageId !== "markdown") {
         webview.postMessage({
             type: "reviewer:error",

@@ -50,12 +50,16 @@ var __importStar = (this && this.__importStar) || (function () {
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.registerResearchSurfaces = registerResearchSurfaces;
 const vscode = __importStar(require("vscode"));
+const fs = __importStar(require("fs"));
+const path = __importStar(require("path"));
 const sidebarProvider_1 = require("../sidebarProvider");
 const checklistBadges_1 = require("./checklistBadges");
 const citationsPanel_1 = require("./citationsPanel");
 const outlinePanel_1 = require("./outlinePanel");
 const readabilityPanel_1 = require("./readabilityPanel");
 const insertCitation_1 = require("./insertCitation");
+const refsPanel_1 = require("./refsPanel");
+const daemonClient_1 = require("../daemonClient");
 /**
  * Public entry point. Agent A's ``extension.ts`` calls this exactly once,
  * inside ``activate(ctx)``. Failures here should never block extension
@@ -78,6 +82,108 @@ function registerResearchSurfaces(ctx) {
     }
     catch (err) {
         _logActivationError("openOutline command", err);
+    }
+    // ---- v1.5 new commands ----
+    // humanizer.importBibtex — open file picker, import .bib into references.json
+    try {
+        ctx.subscriptions.push(vscode.commands.registerCommand("humanizer.importBibtex", async () => {
+            const folders = vscode.workspace.workspaceFolders;
+            const root = folders && folders.length > 0 ? folders[0].uri.fsPath : undefined;
+            if (!root) {
+                vscode.window.showWarningMessage("Open a workspace folder to import BibTeX references.");
+                return;
+            }
+            const uris = await vscode.window.showOpenDialog({
+                canSelectMany: false,
+                canSelectFiles: true,
+                canSelectFolders: false,
+                filters: { "BibTeX files": ["bib"] },
+                title: "Import BibTeX",
+            });
+            if (!uris || uris.length === 0) {
+                return;
+            }
+            let bibtexContent;
+            try {
+                bibtexContent = fs.readFileSync(uris[0].fsPath, "utf8");
+            }
+            catch (e) {
+                vscode.window.showErrorMessage(`Humanizer: could not read file — ${e instanceof Error ? e.message : String(e)}`);
+                return;
+            }
+            const editor = vscode.window.activeTextEditor;
+            const documentPath = editor && editor.document.languageId === "markdown"
+                ? editor.document.uri.fsPath
+                : undefined;
+            try {
+                const result = await vscode.window.withProgress({
+                    location: vscode.ProgressLocation.Notification,
+                    title: "Humanizer: importing BibTeX…",
+                    cancellable: false,
+                }, () => (0, daemonClient_1.importBibtex)(bibtexContent, root, documentPath));
+                vscode.window.showInformationMessage(`Humanizer: imported ${result.imported} reference(s), ${result.skipped} skipped.`);
+            }
+            catch (e) {
+                const msg = e instanceof daemonClient_1.DaemonError ? e.message : e instanceof Error ? e.message : String(e);
+                vscode.window.showErrorMessage(`Humanizer: BibTeX import failed — ${msg}`);
+            }
+        }));
+    }
+    catch (err) {
+        _logActivationError("importBibtex command", err);
+    }
+    // humanizer.exportBibtex — export workspace references to a .bib file
+    try {
+        ctx.subscriptions.push(vscode.commands.registerCommand("humanizer.exportBibtex", async () => {
+            const folders = vscode.workspace.workspaceFolders;
+            const root = folders && folders.length > 0 ? folders[0].uri.fsPath : undefined;
+            if (!root) {
+                vscode.window.showWarningMessage("Open a workspace folder to export BibTeX references.");
+                return;
+            }
+            let bibtexText;
+            try {
+                bibtexText = await (0, daemonClient_1.exportBibtex)(root);
+            }
+            catch (e) {
+                const msg = e instanceof daemonClient_1.DaemonError ? e.message : e instanceof Error ? e.message : String(e);
+                vscode.window.showErrorMessage(`Humanizer: BibTeX export failed — ${msg}`);
+                return;
+            }
+            const saveUri = await vscode.window.showSaveDialog({
+                defaultUri: vscode.Uri.file(path.join(root, "references.bib")),
+                filters: { "BibTeX files": ["bib"] },
+                title: "Export BibTeX",
+            });
+            if (!saveUri) {
+                return;
+            }
+            try {
+                fs.writeFileSync(saveUri.fsPath, bibtexText, "utf8");
+                vscode.window.showInformationMessage(`Humanizer: exported ${saveUri.fsPath}`);
+            }
+            catch (e) {
+                vscode.window.showErrorMessage(`Humanizer: could not write file — ${e instanceof Error ? e.message : String(e)}`);
+            }
+        }));
+    }
+    catch (err) {
+        _logActivationError("exportBibtex command", err);
+    }
+    // humanizer.resolveAllOrphans — batch-stub all orphan citations
+    try {
+        ctx.subscriptions.push(vscode.commands.registerCommand("humanizer.resolveAllOrphans", async () => {
+            // We need a webview reference to post back; since this is a palette
+            // command we use a no-op webview shim (status messages go to
+            // showInformationMessage inside resolveAllOrphans already).
+            const shimWebview = {
+                postMessage: (_msg) => { },
+            };
+            await (0, citationsPanel_1.resolveAllOrphans)(shimWebview);
+        }));
+    }
+    catch (err) {
+        _logActivationError("resolveAllOrphans command", err);
     }
     // ---- Section-tree checklist badges ----
     try {
@@ -161,6 +267,11 @@ function _wireSidebarHandlers(ctx) {
         }
         if (t.startsWith("readability.")) {
             await (0, readabilityPanel_1.handleReadabilityMessage)(msg, webview);
+            return true;
+        }
+        // v1.5 — reference library messages
+        if (t.startsWith("refs.")) {
+            await (0, refsPanel_1.handleRefsMessage)(msg, webview);
             return true;
         }
         return false;

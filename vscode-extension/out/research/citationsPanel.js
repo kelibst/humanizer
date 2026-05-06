@@ -6,9 +6,15 @@
  * message back into the webview. Workspace root is the first opened
  * folder; if no folder is open, returns ``citations.error``.
  *
+ * v1.5 additions (CONTRACT §A3):
+ *   resolveOrphan()     — stub-create one orphan key
+ *   resolveAllOrphans() — stub-create all current orphans
+ *
  * Messages:
  *   incoming: { type: "citations.fetch" }
  *             { type: "citations.reveal", start, end }
+ *             { type: "citations.resolveOrphan", key }    (v1.5)
+ *             { type: "citations.resolveAll" }            (v1.5)
  *   outgoing: { type: "citations.data", missing, orphans, unused }
  *             { type: "citations.error", message }
  */
@@ -48,9 +54,12 @@ var __importStar = (this && this.__importStar) || (function () {
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.fetchCitationsForActive = fetchCitationsForActive;
 exports.revealOffset = revealOffset;
+exports.resolveOrphan = resolveOrphan;
+exports.resolveAllOrphans = resolveAllOrphans;
 exports.handleCitationsMessage = handleCitationsMessage;
 const vscode = __importStar(require("vscode"));
 const daemonClient_1 = require("../daemonClient");
+const activeEditorTracker_1 = require("../activeEditorTracker");
 function _workspaceRoot() {
     const folders = vscode.workspace.workspaceFolders;
     if (!folders || folders.length === 0) {
@@ -59,7 +68,7 @@ function _workspaceRoot() {
     return folders[0].uri.fsPath;
 }
 function _activeMarkdown() {
-    const editor = vscode.window.activeTextEditor;
+    const editor = (0, activeEditorTracker_1.getLastMarkdownEditor)() ?? vscode.window.activeTextEditor;
     if (!editor || editor.document.languageId !== "markdown") {
         return undefined;
     }
@@ -100,6 +109,96 @@ async function revealOffset(start, end) {
     editor.selection = new vscode.Selection(startPos, endPos);
     editor.revealRange(new vscode.Range(startPos, endPos), vscode.TextEditorRevealType.InCenter);
 }
+// ---------------------------------------------------------------------------
+// v1.5 — orphan resolution helpers (CONTRACT §A3)
+// ---------------------------------------------------------------------------
+/**
+ * Create a stub reference for a single orphan citation key.
+ * On success, re-fetches the full citations list and posts ``citations.data``.
+ */
+async function resolveOrphan(key, webview) {
+    const root = _workspaceRoot();
+    if (!root) {
+        webview.postMessage({
+            type: "citations.error",
+            message: "Open a workspace folder to resolve orphan citations.",
+        });
+        return;
+    }
+    try {
+        await (0, daemonClient_1.batchStubOrphans)([key], root);
+        // Re-fetch so the panel reflects the new stub.
+        const result = await fetchCitationsForActive();
+        if (result.ok) {
+            webview.postMessage({
+                type: "citations.data",
+                missing: result.data.missing,
+                orphans: result.data.orphans,
+                unused: result.data.unused,
+            });
+        }
+        vscode.window.setStatusBarMessage(`Humanizer: created stub for "${key}"`, 4000);
+    }
+    catch (err) {
+        const msg = err instanceof daemonClient_1.DaemonError
+            ? err.message
+            : err instanceof Error
+                ? err.message
+                : String(err);
+        webview.postMessage({ type: "citations.error", message: msg });
+    }
+}
+/**
+ * Create stub references for ALL current orphan keys.
+ * Calls ``POST /v1/citations`` to get the current orphan list, then
+ * calls ``POST /v1/refs/batch-stub`` with all keys at once.
+ */
+async function resolveAllOrphans(webview) {
+    const root = _workspaceRoot();
+    if (!root) {
+        webview.postMessage({
+            type: "citations.error",
+            message: "Open a workspace folder to resolve orphan citations.",
+        });
+        return;
+    }
+    const result = await fetchCitationsForActive();
+    if (!result.ok) {
+        webview.postMessage({ type: "citations.error", message: result.message });
+        return;
+    }
+    const orphanKeys = result.data.orphans.map((o) => o.key);
+    if (orphanKeys.length === 0) {
+        vscode.window.showInformationMessage("Humanizer: No orphan citations to resolve.");
+        return;
+    }
+    try {
+        const stubResult = await (0, daemonClient_1.batchStubOrphans)(orphanKeys, root);
+        // Re-fetch so the panel reflects the new stubs.
+        const refreshed = await fetchCitationsForActive();
+        if (refreshed.ok) {
+            webview.postMessage({
+                type: "citations.data",
+                missing: refreshed.data.missing,
+                orphans: refreshed.data.orphans,
+                unused: refreshed.data.unused,
+            });
+        }
+        vscode.window.showInformationMessage(`Humanizer: Created ${stubResult.created} stub(s) for orphan citations ` +
+            `(${stubResult.skipped} already existed).`);
+    }
+    catch (err) {
+        const msg = err instanceof daemonClient_1.DaemonError
+            ? err.message
+            : err instanceof Error
+                ? err.message
+                : String(err);
+        webview.postMessage({ type: "citations.error", message: msg });
+    }
+}
+// ---------------------------------------------------------------------------
+// Message router
+// ---------------------------------------------------------------------------
 async function handleCitationsMessage(msg, webview) {
     switch (msg.type) {
         case "citations.fetch": {
@@ -124,6 +223,16 @@ async function handleCitationsMessage(msg, webview) {
             if (typeof msg.start === "number" && typeof msg.end === "number") {
                 await revealOffset(msg.start, msg.end);
             }
+            break;
+        // v1.5 — resolve a single orphan
+        case "citations.resolveOrphan":
+            if (typeof msg.key === "string" && msg.key) {
+                await resolveOrphan(msg.key, webview);
+            }
+            break;
+        // v1.5 — resolve all orphans
+        case "citations.resolveAll":
+            await resolveAllOrphans(webview);
             break;
         default:
             break;

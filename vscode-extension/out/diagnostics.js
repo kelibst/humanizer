@@ -54,6 +54,7 @@ exports.spanForDiagnostic = spanForDiagnostic;
 exports.spansFor = spansFor;
 exports.getCollection = getCollection;
 exports.registerDiagnostics = registerDiagnostics;
+const path = __importStar(require("path"));
 const vscode = __importStar(require("vscode"));
 const daemonClient_1 = require("./daemonClient");
 const DEBOUNCE_MS = 2000;
@@ -188,7 +189,7 @@ async function _runLint(document, statusBar) {
     // After lint, refresh the status bar from the same text. Errors here are
     // swallowed by `refreshFromText` itself.
     if (!document.isClosed) {
-        void statusBar.refreshFromText(text);
+        void statusBar.refreshFromText(text, path.basename(document.uri.fsPath));
     }
 }
 function _scheduleLint(document, statusBar) {

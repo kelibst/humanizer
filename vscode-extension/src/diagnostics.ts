@@ -16,6 +16,7 @@
  * `getDiagnostics()`.
  */
 
+import * as path from "path";
 import * as vscode from "vscode";
 import { lintText, DaemonError, type LintSpan } from "./daemonClient";
 import type { StatusBarManager } from "./statusBar";
@@ -180,7 +181,7 @@ async function _runLint(
   // After lint, refresh the status bar from the same text. Errors here are
   // swallowed by `refreshFromText` itself.
   if (!document.isClosed) {
-    void statusBar.refreshFromText(text);
+    void statusBar.refreshFromText(text, path.basename(document.uri.fsPath));
   }
 }
 

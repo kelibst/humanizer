@@ -13,6 +13,7 @@ from sis_caro_humanizer.research.refs_store import (
     derive_id,
     load_refs,
     parse_apa_block,
+    parse_orphan_key,
     regenerate_apa_block,
     save_refs,
     update_markdown_references_block,
@@ -234,3 +235,37 @@ def test_round_trip_parse_then_regenerate():
     titles_1 = sorted(r.title for r in parsed)
     titles_2 = sorted(r.title for r in parsed2)
     assert titles_1 == titles_2
+
+
+# ---------------------------------------------------------------------------
+# parse_orphan_key (CONTRACT v1.5 §1)
+# ---------------------------------------------------------------------------
+
+
+def test_parse_orphan_key_single_author():
+    names, year = parse_orphan_key("(Smith, 2020)")
+    assert names == ["Smith"]
+    assert year == 2020
+
+
+def test_parse_orphan_key_et_al():
+    names, year = parse_orphan_key("(Smith et al., 2019)")
+    assert names == ["Smith"]
+    assert year == 2019
+
+
+def test_parse_orphan_key_two_authors_ampersand():
+    names, year = parse_orphan_key("(Smith & Doe, 2021)")
+    assert names == ["Smith", "Doe"]
+    assert year == 2021
+
+
+def test_parse_orphan_key_page_suffix_stripped():
+    names, year = parse_orphan_key("(Jones, 2018, p. 42)")
+    assert names == ["Jones"]
+    assert year == 2018
+
+
+def test_parse_orphan_key_invalid_raises():
+    with pytest.raises(ValueError):
+        parse_orphan_key("not a citation")

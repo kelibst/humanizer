@@ -52,6 +52,8 @@ exports.registerInsertCitationCommand = registerInsertCitationCommand;
 const vscode = __importStar(require("vscode"));
 const daemonClient_1 = require("../daemonClient");
 const NEW_REF_LABEL = "$(plus) New reference…";
+const DOI_LOOKUP_LABEL = "$(search) Look up by DOI…";
+const MANUAL_LABEL = "$(edit) Enter details manually";
 function _workspaceRoot() {
     const folders = vscode.workspace.workspaceFolders;
     if (!folders || folders.length === 0) {
@@ -83,6 +85,126 @@ function citationKey(ref) {
     return `(${_lastName(ref.authors[0])}, ${ref.year})`;
 }
 async function _promptForNewReference(workspaceRoot, documentPath) {
+    // v1.5: first show a mode Quick-Pick — DOI lookup vs manual entry.
+    const modePick = await vscode.window.showQuickPick([
+        {
+            label: DOI_LOOKUP_LABEL,
+            description: "Fetch metadata from CrossRef by DOI",
+            mode: "doi",
+        },
+        {
+            label: MANUAL_LABEL,
+            description: "Enter authors, year and title yourself",
+            mode: "manual",
+        },
+    ], { placeHolder: "How would you like to add this reference?" });
+    if (!modePick) {
+        return undefined;
+    }
+    if (modePick.mode === "doi") {
+        return _promptViaDoi(workspaceRoot, documentPath);
+    }
+    return _promptManually(workspaceRoot, documentPath);
+}
+/**
+ * DOI lookup flow per CONTRACT §A2 / BRIEF §5.
+ *
+ * 1. Input box for DOI.
+ * 2. Validate `^10\.\d{4,}`.
+ * 3. Spinner → doiLookup().
+ * 4. Confirm Quick-Pick showing resolved metadata.
+ * 5. upsertRef() → return reference.
+ *
+ * DaemonError(404) → warn and fall through to manual entry.
+ * Other error → abort and show error.
+ */
+async function _promptViaDoi(workspaceRoot, documentPath) {
+    const doiInput = await vscode.window.showInputBox({
+        title: "Look up by DOI",
+        prompt: "Paste the DOI (e.g. 10.1000/xyz)",
+        validateInput: (v) => /^10\.\d{4,}/.test(v.trim())
+            ? null
+            : "DOI must start with 10.NNNN — e.g. 10.1038/nature12345",
+    });
+    if (!doiInput) {
+        return undefined;
+    }
+    const doi = doiInput.trim();
+    // Spinner while fetching
+    let resolved;
+    try {
+        await vscode.window.withProgress({
+            location: vscode.ProgressLocation.Notification,
+            title: `Humanizer: resolving DOI ${doi}…`,
+            cancellable: false,
+        }, async () => {
+            resolved = await (0, daemonClient_1.doiLookup)(doi);
+        });
+    }
+    catch (err) {
+        if (err instanceof daemonClient_1.DaemonError && err.status === 404) {
+            vscode.window.showWarningMessage(`Humanizer: DOI not found (${doi}). Falling through to manual entry.`);
+            return _promptManually(workspaceRoot, documentPath);
+        }
+        const msg = err instanceof daemonClient_1.DaemonError
+            ? err.message
+            : err instanceof Error
+                ? err.message
+                : String(err);
+        vscode.window.showErrorMessage(`Humanizer: DOI lookup failed — ${msg}`);
+        return undefined;
+    }
+    if (!resolved) {
+        return undefined;
+    }
+    // Confirmation Quick-Pick showing the resolved metadata.
+    const authorStr = resolved.authors.slice(0, 3).join("; ") +
+        (resolved.authors.length > 3 ? " et al." : "");
+    const confirm = await vscode.window.showQuickPick([
+        {
+            label: "$(check) Use this reference",
+            description: resolved.title,
+            detail: `${authorStr} (${resolved.year})${resolved.venue ? " · " + resolved.venue : ""}`,
+            accept: true,
+        },
+        {
+            label: "$(close) Cancel",
+            description: "",
+            accept: false,
+        },
+    ], { placeHolder: "Confirm DOI result" });
+    if (!confirm || !confirm.accept) {
+        return undefined;
+    }
+    // Save the resolved reference to references.json.
+    const partial = {
+        authors: resolved.authors,
+        year: resolved.year,
+        title: resolved.title,
+        type: resolved.type,
+        doi: resolved.doi,
+    };
+    if (resolved.venue) {
+        partial.venue = resolved.venue;
+    }
+    if (resolved.rawApa) {
+        partial.rawApa = resolved.rawApa;
+    }
+    try {
+        return await (0, daemonClient_1.upsertRef)(workspaceRoot, partial, documentPath);
+    }
+    catch (err) {
+        const msg = err instanceof daemonClient_1.DaemonError
+            ? err.message
+            : err instanceof Error
+                ? err.message
+                : String(err);
+        vscode.window.showErrorMessage(`Humanizer: ${msg}`);
+        return undefined;
+    }
+}
+/** Original manual-entry flow (extracted from the old _promptForNewReference). */
+async function _promptManually(workspaceRoot, documentPath) {
     const authorsRaw = await vscode.window.showInputBox({
         title: "New reference — Authors",
         prompt: 'Authors in APA format. Use ";" to separate, e.g. "Smith, J.; Doe, A."',

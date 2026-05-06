@@ -10,6 +10,8 @@ on-disk persistent token.
 """
 from __future__ import annotations
 
+import asyncio
+import json
 import time
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import asdict, is_dataclass
@@ -18,7 +20,7 @@ from typing import Any, Callable, Iterable
 
 from fastapi import Depends, FastAPI, HTTPException, Request, status
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, PlainTextResponse, StreamingResponse
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from ..backends import BACKEND_NAMES, BackendError, BackendUnavailable, get_backend, list_available
@@ -44,7 +46,13 @@ from ..scoring.risk import ai_risk_score
 from .auth import constant_time_compare, extract_bearer
 from .lint import LINT_CODES, run_lint
 
-VERSION = "1.2.0"
+VERSION = "1.5.0"
+
+# Module-level sentinel for SSE stream termination (CONTRACT v1.5 §8).
+_STREAM_DONE = object()
+
+# Module-level executor reused by /v1/suggest and /v1/transform/stream.
+_executor = ThreadPoolExecutor(max_workers=4)
 
 ALLOWED_ORIGINS = ("https://docs.google.com", "https://script.google.com")
 
@@ -252,6 +260,29 @@ class BenchmarkBody(BaseModel):
             if d not in KNOWN_DETECTORS:
                 raise ValueError(f"unknown detector {d!r}")
         return v
+
+
+# ---------------------------------------------------------------------------
+# v1.5 request bodies (CONTRACT v1.5 §3)
+# ---------------------------------------------------------------------------
+
+
+class DoiLookupBody(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    doi: str = Field(..., min_length=1)
+
+
+class BibtexImportBody(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    bibtex_text: str = Field(..., min_length=1)
+    workspace_root: str = Field(..., min_length=1)
+    document_path: str | None = None
+
+
+class BatchStubBody(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    orphan_keys: list[str] = Field(..., min_length=1)
+    workspace_root: str = Field(..., min_length=1)
 
 
 # ---------------------------------------------------------------------------
@@ -803,6 +834,305 @@ def create_app(
                 external_rows.append(row)
 
         return {"humanizer": humanizer_payload, "external": external_rows}
+
+    # ------------------------------------------------------------------
+    # v1.5 citation-management routes (CONTRACT v1.5 §3)
+    # ------------------------------------------------------------------
+
+    @app.post("/v1/refs/doi-lookup")
+    async def doi_lookup_route(body: DoiLookupBody, _: None = auth_dep) -> dict[str, Any]:
+        """Resolve a DOI via CrossRef and return metadata.
+
+        Does NOT save to references.json — client calls POST /v1/refs to persist.
+        """
+        from ..research.doi import DoiLookupError, DoiNotFound, lookup_doi
+
+        try:
+            result = lookup_doi(body.doi)
+        except DoiNotFound as exc:
+            raise HTTPException(
+                status_code=404,
+                detail={"error": "doi_not_found", "detail": str(exc)},
+            ) from exc
+        except DoiLookupError as exc:
+            raise HTTPException(
+                status_code=502,
+                detail={"error": "doi_lookup_error", "detail": str(exc)},
+            ) from exc
+        return result
+
+    @app.post("/v1/refs/bibtex-import")
+    async def bibtex_import_route(
+        body: BibtexImportBody, _: None = auth_dep
+    ) -> dict[str, Any]:
+        """Parse BibTeX text and bulk-upsert into references.json.
+
+        Collisions (same derived id) are silently skipped and counted.
+        """
+        from ..research.bibtex import parse_bibtex
+
+        try:
+            parsed = parse_bibtex(body.bibtex_text)
+        except Exception as exc:
+            raise HTTPException(
+                status_code=400,
+                detail={"error": "invalid_input", "detail": str(exc)},
+            ) from exc
+
+        try:
+            existing = load_refs(body.workspace_root)
+        except OSError as exc:
+            raise HTTPException(
+                status_code=400,
+                detail={"error": "invalid_input", "detail": str(exc)},
+            ) from exc
+
+        existing_ids = {r.id for r in existing}
+        imported_count = 0
+        skipped_count = 0
+        new_refs_list: list[Reference] = []
+
+        current = list(existing)
+        for ref in parsed:
+            if ref.id in existing_ids:
+                skipped_count += 1
+                continue
+            current, canonical = upsert_ref(current, ref)
+            existing_ids.add(canonical.id)
+            new_refs_list.append(canonical)
+            imported_count += 1
+
+        try:
+            save_refs(body.workspace_root, current)
+        except OSError as exc:
+            raise HTTPException(
+                status_code=500,
+                detail={"error": "internal", "detail": str(exc)},
+            ) from exc
+
+        if body.document_path:
+            _try_update_markdown_refs(body.document_path, current)
+
+        return {
+            "imported": imported_count,
+            "skipped": skipped_count,
+            "refs": [r.model_dump(mode="json") for r in new_refs_list],
+        }
+
+    @app.get("/v1/refs/bibtex-export")
+    async def bibtex_export_route(
+        workspace_root: str, _: None = auth_dep
+    ) -> PlainTextResponse:
+        """Export all references as BibTeX.
+
+        Returns Content-Disposition: attachment; filename="references.bib".
+        """
+        from ..research.bibtex import references_to_bibtex
+
+        if not workspace_root:
+            raise HTTPException(
+                status_code=400,
+                detail={"error": "invalid_input", "detail": "workspace_root is required"},
+            )
+        refs = load_refs(workspace_root)
+        if not refs:
+            raise HTTPException(
+                status_code=404,
+                detail={"error": "not_found", "detail": "workspace_root not found or no refs"},
+            )
+        bib_text = references_to_bibtex(refs)
+        return PlainTextResponse(
+            content=bib_text,
+            media_type="text/plain; charset=utf-8",
+            headers={"Content-Disposition": 'attachment; filename="references.bib"'},
+        )
+
+    @app.post("/v1/refs/batch-stub")
+    async def batch_stub_route(
+        body: BatchStubBody, _: None = auth_dep
+    ) -> dict[str, Any]:
+        """Create stub References from orphan citation keys.
+
+        Each key like '(Smith, 2020)' becomes a Reference with
+        title='[TITLE UNKNOWN]' and raw_apa synthesised from parsed names/year.
+        Collisions are silently skipped.
+        """
+        from ..research.refs_store import parse_orphan_key
+
+        try:
+            existing = load_refs(body.workspace_root)
+        except OSError as exc:
+            raise HTTPException(
+                status_code=400,
+                detail={"error": "invalid_input", "detail": str(exc)},
+            ) from exc
+
+        existing_ids = {r.id for r in existing}
+        created_count = 0
+        skipped_count = 0
+        created_refs: list[Reference] = []
+        current = list(existing)
+
+        parse_errors: list[str] = []
+        for key in body.orphan_keys:
+            try:
+                last_names, year = parse_orphan_key(key)
+            except ValueError as exc:
+                parse_errors.append(str(exc))
+                continue
+
+            # Build APA stub author strings — we only have last names.
+            stub_authors = [f"{name}, [INITIALS UNKNOWN]" for name in last_names]
+            first_last = last_names[0] if last_names else "Unknown"
+            raw_apa = f"{first_last}, [INITIALS UNKNOWN]. ({year}). [TITLE UNKNOWN]."
+
+            ref_dict: dict[str, Any] = {
+                "id": "placeholder",
+                "authors": stub_authors,
+                "year": year,
+                "title": "[TITLE UNKNOWN]",
+                "venue": None,
+                "doi": None,
+                "url": None,
+                "type": "journal",
+                "raw_apa": raw_apa,
+            }
+            try:
+                ref_obj = Reference.model_validate(ref_dict)
+            except (TypeError, ValueError) as exc:
+                parse_errors.append(str(exc))
+                continue
+
+            # Derive id without "placeholder"
+            real_id = derive_id(ref_obj.model_copy(update={"id": "tmp"}), existing=current)
+            ref_obj = ref_obj.model_copy(update={"id": real_id})
+
+            if real_id in existing_ids:
+                skipped_count += 1
+                continue
+
+            current, canonical = upsert_ref(current, ref_obj)
+            existing_ids.add(canonical.id)
+            created_refs.append(canonical)
+            created_count += 1
+
+        if parse_errors and not created_refs and not skipped_count:
+            raise HTTPException(
+                status_code=400,
+                detail={"error": "invalid_input", "detail": "; ".join(parse_errors)},
+            )
+
+        try:
+            save_refs(body.workspace_root, current)
+        except OSError as exc:
+            raise HTTPException(
+                status_code=500,
+                detail={"error": "internal", "detail": str(exc)},
+            ) from exc
+
+        return {
+            "created": created_count,
+            "skipped": skipped_count,
+            "refs": [r.model_dump(mode="json") for r in created_refs],
+        }
+
+    # ------------------------------------------------------------------
+    # v1.5 SSE streaming route (CONTRACT v1.5 §3.5, §8)
+    # ------------------------------------------------------------------
+
+    @app.post("/v1/transform/stream")
+    async def transform_stream(
+        body: TransformBody, request: Request, _: None = auth_dep
+    ) -> StreamingResponse:
+        """Run the pipeline and stream StageEvents as Server-Sent Events.
+
+        CONTRACT v1.5 §3.5 / §8:
+        - Uses module-level _executor (ThreadPoolExecutor).
+        - on_event callback uses asyncio.run_coroutine_threadsafe to push
+          into an asyncio.Queue from the worker thread.
+        - Sentinel _STREAM_DONE signals generator loop to stop.
+        - Generator yields SSE frames; final 'done' event carries PipelineResult.
+        """
+        try:
+            prof = _resolve_profile_or_default(body.profile)
+        except FileNotFoundError as exc:
+            raise HTTPException(
+                status_code=400,
+                detail={"error": "not_found", "detail": str(exc)},
+            ) from exc
+        prof = _apply_backend_override(prof, body.backend, body.model)
+
+        stages = _normalize_stages(body.stages)
+        loop = asyncio.get_event_loop()
+        q: asyncio.Queue[Any] = asyncio.Queue()
+
+        def _on_event(event: tuple) -> None:
+            """Called from the worker thread; puts JSON-serialisable dict on queue."""
+            kind = event[0]
+            if kind == "stage_start":
+                payload = {"type": "stage_start", "stage": event[1]}
+            elif kind == "stage_done":
+                payload = {"type": "stage_done", "stage": event[1], "elapsed_s": event[2]}
+            elif kind == "stage_skipped":
+                payload = {"type": "stage_skipped", "stage": event[1], "reason": event[2]}
+            elif kind == "determ_step":
+                payload = {"type": "determ_step", "step": event[1], "count": event[2]}
+            else:
+                return
+            asyncio.run_coroutine_threadsafe(q.put(payload), loop)
+
+        def _run_in_thread() -> Any:
+            try:
+                return pipeline_runner(
+                    body.text,
+                    prof,
+                    stages=stages,
+                    model=body.model,
+                    seed=body.seed,
+                    on_event=_on_event,
+                )
+            finally:
+                asyncio.run_coroutine_threadsafe(q.put(_STREAM_DONE), loop)
+
+        future = _executor.submit(_run_in_thread)
+
+        async def _generate():
+            try:
+                while True:
+                    try:
+                        item = await asyncio.wait_for(q.get(), timeout=120.0)
+                    except asyncio.TimeoutError:
+                        yield f"data: {json.dumps({'type': 'error', 'message': 'pipeline timeout'})}\n\n"
+                        return
+                    if item is _STREAM_DONE:
+                        break
+                    yield f"data: {json.dumps(item)}\n\n"
+
+                # Await the future result and emit 'done' event.
+                try:
+                    result = future.result(timeout=5.0)
+                    done_payload = {
+                        "type": "done",
+                        "output": result.output,
+                        "pre_score": result.pre_score.score if result.pre_score else None,
+                        "post_score": result.post_score.score if result.post_score else None,
+                        "notes": list(result.notes),
+                        "llm_used": result.llm_used,
+                    }
+                    yield f"data: {json.dumps(done_payload)}\n\n"
+                except Exception as exc:
+                    yield f"data: {json.dumps({'type': 'error', 'message': str(exc)})}\n\n"
+            except Exception as exc:
+                yield f"data: {json.dumps({'type': 'error', 'message': str(exc)})}\n\n"
+
+        return StreamingResponse(
+            _generate(),
+            media_type="text/event-stream; charset=utf-8",
+            headers={
+                "Cache-Control": "no-cache",
+                "X-Accel-Buffering": "no",
+            },
+        )
 
     return app
 

@@ -43,6 +43,7 @@ var __importStar = (this && this.__importStar) || (function () {
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.activate = activate;
 exports.deactivate = deactivate;
+const path = __importStar(require("path"));
 const vscode = __importStar(require("vscode"));
 const sidebarProvider_1 = require("./sidebarProvider");
 const statusBar_1 = require("./statusBar");
@@ -54,6 +55,8 @@ const launcher_1 = require("./launcher");
 const welcome_1 = require("./welcome");
 const dashboard_1 = require("./dashboard");
 const index_1 = require("./research/v14/index");
+const activeEditorTracker_1 = require("./activeEditorTracker");
+const citationHoverProvider_1 = require("./citationHoverProvider");
 // ---------------------------------------------------------------------------
 // Suppress self-signed cert errors for the local daemon.
 //
@@ -70,6 +73,14 @@ function _patchTls() {
 // ---------------------------------------------------------------------------
 function activate(ctx) {
     _patchTls();
+    // ---- Active editor tracker (v1.5) ----
+    // Register before anything else so _last is seeded from the start.
+    try {
+        (0, activeEditorTracker_1.registerActiveEditorTracker)(ctx);
+    }
+    catch (err) {
+        _logSetupError("activeEditorTracker", err);
+    }
     // ---- Sidebar ----
     const sidebarProvider = new sidebarProvider_1.SidebarProvider(ctx.extensionUri);
     ctx.subscriptions.push(vscode.window.registerWebviewViewProvider(sidebarProvider_1.SidebarProvider.VIEW_ID, sidebarProvider, { webviewOptions: { retainContextWhenHidden: true } }));
@@ -83,6 +94,13 @@ function activate(ctx) {
     (0, diagnostics_1.registerDiagnostics)(ctx, statusBar);
     (0, hoverProvider_1.registerHoverProvider)(ctx);
     (0, codeActionsProvider_1.registerCodeActionsProvider)(ctx);
+    // ---- Citation hover provider (v1.5) ----
+    try {
+        (0, citationHoverProvider_1.registerCitationHoverProvider)(ctx);
+    }
+    catch (err) {
+        _logSetupError("citationHoverProvider", err);
+    }
     // ---- Track A commands ----
     // humanizer.startDaemon — run `humanize serve` in an integrated terminal.
     ctx.subscriptions.push(vscode.commands.registerCommand("humanizer.startDaemon", () => {
@@ -99,7 +117,7 @@ function activate(ctx) {
     }));
     // humanizer.scoreFile — score the active .md file and update the status bar.
     ctx.subscriptions.push(vscode.commands.registerCommand("humanizer.scoreFile", async () => {
-        const editor = vscode.window.activeTextEditor;
+        const editor = (0, activeEditorTracker_1.getLastMarkdownEditor)() ?? vscode.window.activeTextEditor;
         if (!editor || editor.document.languageId !== "markdown") {
             vscode.window.showWarningMessage("Open a Markdown file to score.");
             return;
@@ -108,7 +126,7 @@ function activate(ctx) {
             const cfg = vscode.workspace.getConfiguration("humanizer");
             const profile = cfg.get("profile");
             const result = await (0, daemonClient_1.scoreText)(editor.document.getText(), profile);
-            statusBar.updateScore(result.score, result.band);
+            statusBar.updateScore(result.score, result.band, path.basename(editor.document.uri.fsPath));
             sidebarProvider.postScore(result.score, result.band, result.features);
         }
         catch (err) {
@@ -117,7 +135,7 @@ function activate(ctx) {
     }));
     // humanizer.transformSelection — transform selected text and replace in editor.
     ctx.subscriptions.push(vscode.commands.registerCommand("humanizer.transformSelection", async () => {
-        const editor = vscode.window.activeTextEditor;
+        const editor = (0, activeEditorTracker_1.getLastMarkdownEditor)() ?? vscode.window.activeTextEditor;
         if (!editor || editor.document.languageId !== "markdown") {
             vscode.window.showWarningMessage("Open a Markdown file to transform.");
             return;
@@ -145,7 +163,7 @@ function activate(ctx) {
                 await editor.edit((eb) => {
                     eb.replace(selection, result.output);
                 });
-                statusBar.updateScore(result.post_score, _scoreToBand(result.post_score));
+                statusBar.updateScore(result.post_score, _scoreToBand(result.post_score), path.basename(editor.document.uri.fsPath));
                 if (result.notes.length > 0) {
                     vscode.window.setStatusBarMessage(`Humanizer: ${result.notes[0]}`, 4000);
                 }
@@ -157,7 +175,7 @@ function activate(ctx) {
     }));
     // humanizer.suggestSelection — open sidebar with 3 suggestions for selection.
     ctx.subscriptions.push(vscode.commands.registerCommand("humanizer.suggestSelection", async () => {
-        const editor = vscode.window.activeTextEditor;
+        const editor = (0, activeEditorTracker_1.getLastMarkdownEditor)() ?? vscode.window.activeTextEditor;
         if (!editor || editor.document.languageId !== "markdown") {
             vscode.window.showWarningMessage("Open a Markdown file to get suggestions.");
             return;

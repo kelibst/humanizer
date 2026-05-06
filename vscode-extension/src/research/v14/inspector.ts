@@ -13,6 +13,7 @@
 import * as vscode from "vscode";
 import { inspect, DaemonError } from "../../daemonClient";
 import { parseHeadings, SectionNode } from "../../sectionProvider";
+import { getLastMarkdownEditor } from "../../activeEditorTracker";
 
 const TYPE_BY_TITLE: Array<[RegExp, string]> = [
   [/^introduction$/i, "introduction"],
@@ -65,7 +66,7 @@ export async function handleInspector(
   _msg: Record<string, unknown>,
   webview: vscode.Webview
 ): Promise<void> {
-  const editor = vscode.window.activeTextEditor;
+  const editor = getLastMarkdownEditor() ?? vscode.window.activeTextEditor;
   if (!editor || editor.document.languageId !== "markdown") {
     webview.postMessage({
       type: "inspector:error",

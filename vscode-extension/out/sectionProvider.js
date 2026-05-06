@@ -48,6 +48,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.SectionProvider = void 0;
 exports.parseHeadings = parseHeadings;
 const vscode = __importStar(require("vscode"));
+const activeEditorTracker_1 = require("./activeEditorTracker");
 // ---------------------------------------------------------------------------
 // Known research-proposal sections (ROADMAP §Research proposal section names)
 // ---------------------------------------------------------------------------
@@ -381,7 +382,7 @@ class SectionProvider {
     }
     // ---- Private ----
     _parseActive() {
-        const editor = vscode.window.activeTextEditor;
+        const editor = (0, activeEditorTracker_1.getLastMarkdownEditor)() ?? vscode.window.activeTextEditor;
         if (!editor || editor.document.languageId !== "markdown") {
             this._nodes = [];
             this._onDidChangeTreeData.fire();

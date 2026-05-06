@@ -21,9 +21,11 @@ import * as path from "path";
 import { execFile } from "child_process";
 import {
   scoreText,
-  transformText,
+  transformTextStream,
+  StreamStageEvent,
   DaemonError,
 } from "./daemonClient";
+import { getLastMarkdownEditor } from "./activeEditorTracker";
 import {
   SectionProvider,
   SectionNode,
@@ -343,7 +345,7 @@ export function registerSectionCommands(
       if (!cfg.autoScore) {
         return;
       }
-      const editor = vscode.window.activeTextEditor;
+      const editor = getLastMarkdownEditor() ?? vscode.window.activeTextEditor;
       if (!editor || editor.document !== document) {
         return;
       }
@@ -363,7 +365,7 @@ export function registerSectionCommands(
     vscode.commands.registerCommand(
       "humanizer.scoreSection",
       async () => {
-        const editor = vscode.window.activeTextEditor;
+        const editor = getLastMarkdownEditor() ?? vscode.window.activeTextEditor;
         if (!editor || editor.document.languageId !== "markdown") {
           vscode.window.showWarningMessage("Open a Markdown file to score a section.");
           return;
@@ -421,7 +423,7 @@ export function registerSectionCommands(
     vscode.commands.registerCommand(
       "humanizer.transformSection",
       async () => {
-        const editor = vscode.window.activeTextEditor;
+        const editor = getLastMarkdownEditor() ?? vscode.window.activeTextEditor;
         if (!editor || editor.document.languageId !== "markdown") {
           vscode.window.showWarningMessage("Open a Markdown file to transform a section.");
           return;
@@ -456,10 +458,27 @@ export function registerSectionCommands(
 
         try {
           const cfg = _cfg();
-          const result = await transformText(text, {
-            stages: ["prescan", "determ", "postscan"],
-            profile: cfg.profile,
-          });
+          // v1.5: use SSE streaming; falls back to transformText() on 404.
+          const result = await transformTextStream(
+            text,
+            { stages: ["prescan", "determ", "postscan"], profile: cfg.profile },
+            (event: StreamStageEvent) => {
+              // Surface stage progress in the status bar.
+              if (event.type === "stage_start") {
+                vscode.window.setStatusBarMessage(
+                  `Humanizer: ${event.stage} running…`,
+                  3000
+                );
+              } else if (event.type === "stage_done") {
+                vscode.window.setStatusBarMessage(
+                  `Humanizer: ${event.stage} done`,
+                  2000
+                );
+              } else if (event.type === "stage_skipped") {
+                _log(`Stage ${event.stage} skipped: ${event.reason}`);
+              }
+            }
+          );
 
           // Replace section body in the document
           await _replaceSectionText(editor, node, result.output);
@@ -477,15 +496,15 @@ export function registerSectionCommands(
           node.postScore = result.post_score;
           _saveNodeProgress(ctx, node);
 
-          // Re-apply decorations after a brief delay (500 ms per CONTRACT §8)
+          // Re-apply decorations after a brief delay (500 ms per CONTRACT §8).
+          // Use the captured `editor` from the top of the handler — do NOT
+          // re-read activeTextEditor here because focus may have shifted to
+          // the sidebar or output panel (v1.5 activeEditorTracker fix).
           setTimeout(async () => {
-            const currentEditor = vscode.window.activeTextEditor;
-            if (currentEditor) {
-              try {
-                await _applyDecorations(currentEditor);
-              } catch (err: unknown) {
-                _log(`Post-transform decoration error: ${String(err)}`);
-              }
+            try {
+              await _applyDecorations(editor);
+            } catch (err: unknown) {
+              _log(`Post-transform decoration error: ${String(err)}`);
             }
           }, 500);
 
@@ -507,7 +526,7 @@ export function registerSectionCommands(
     vscode.commands.registerCommand(
       "humanizer.transformAll",
       async () => {
-        const editor = vscode.window.activeTextEditor;
+        const editor = getLastMarkdownEditor() ?? vscode.window.activeTextEditor;
         if (!editor || editor.document.languageId !== "markdown") {
           vscode.window.showWarningMessage(
             "Open a Markdown file to transform all sections."
@@ -574,10 +593,21 @@ export function registerSectionCommands(
               }
 
               try {
-                const result = await transformText(text, {
-                  stages: ["prescan", "determ", "postscan"],
-                  profile: cfg.profile,
-                });
+                // v1.5: use SSE streaming; falls back to transformText() on 404.
+                const result = await transformTextStream(
+                  text,
+                  { stages: ["prescan", "determ", "postscan"], profile: cfg.profile },
+                  (event: StreamStageEvent) => {
+                    // Update the progress notification message with the current stage.
+                    if (event.type === "stage_start") {
+                      progress.report({ message: `"${node.title}" — ${event.stage} running…` });
+                    } else if (event.type === "stage_done") {
+                      progress.report({ message: `"${node.title}" — ${event.stage} done` });
+                    } else if (event.type === "determ_step") {
+                      _log(`determ_step ${event.step}: ${event.count} changes`);
+                    }
+                  }
+                );
 
                 await _replaceSectionText(editor, freshNode, result.output);
 
@@ -614,14 +644,12 @@ export function registerSectionCommands(
           `Humanizer: Done. ${doneCount}/${total} section${total === 1 ? "" : "s"} rewritten.`
         );
 
-        // Re-apply decorations
-        const currentEditor = vscode.window.activeTextEditor;
-        if (currentEditor) {
-          try {
-            await _applyDecorations(currentEditor);
-          } catch (err: unknown) {
-            _log(`Post-transform-all decoration error: ${String(err)}`);
-          }
+        // Re-apply decorations. Use the captured `editor` from the top of
+        // the handler — do NOT re-read activeTextEditor here (v1.5 fix).
+        try {
+          await _applyDecorations(editor);
+        } catch (err: unknown) {
+          _log(`Post-transform-all decoration error: ${String(err)}`);
         }
       }
     )
@@ -632,7 +660,7 @@ export function registerSectionCommands(
     vscode.commands.registerCommand(
       "humanizer.exportDocx",
       async () => {
-        const editor = vscode.window.activeTextEditor;
+        const editor = getLastMarkdownEditor() ?? vscode.window.activeTextEditor;
         if (!editor || editor.document.languageId !== "markdown") {
           vscode.window.showWarningMessage("Open a Markdown file to export to .docx.");
           return;
@@ -721,7 +749,7 @@ export function registerSectionCommands(
 // Expose a convenience getter so statusBar.ts can call
 // "apply decorations for the active editor" without importing the whole processor:
 export function applyDecorationsForActiveEditor(): void {
-  const editor = vscode.window.activeTextEditor;
+  const editor = getLastMarkdownEditor() ?? vscode.window.activeTextEditor;
   if (editor && editor.document.languageId === "markdown") {
     _applyDecorations(editor).catch((err: unknown) => {
       // Non-fatal — decorations are cosmetic
