@@ -1,0 +1,199 @@
+# Section archetype detection for /v1/checklist (CONTRACT §3.3).
+#
+# Each top-level key is a section type. ``aliases`` lists the canonical heading
+# substrings (case-insensitive, word-boundary). ``components`` lists the
+# completeness components for that archetype: a component is "present" if ANY
+# pattern matches (Python re.IGNORECASE, applied to the section body) OR ANY
+# keyword appears (case-insensitive, word-boundary).
+#
+# Patterns are Python regular-expression strings. Keep them short; anchor on
+# `^` only when absolutely required (matched against the full section body
+# with re.MULTILINE so `^` means start-of-line). Keywords are simple word-
+# boundary lookups, normalised to lowercase.
+
+introduction:
+  aliases: ["introduction", "background", "rationale"]
+  components:
+    hook:
+      patterns:
+        - "^Despite\\b"
+        - "^Increasingly\\b"
+        - "^In recent years"
+        - "^Over the (?:past|last) (?:few |several )?(?:years|decades?|months)"
+        - "^For (?:decades|years|generations)"
+      keywords: []
+    problem_statement:
+      patterns:
+        - "problem (?:is|of|with)"
+        - "remains?\\s+(?:unclear|unexplored|unsolved|poorly understood)"
+        - "however,"
+        - "challenge of"
+      keywords: ["problem", "challenge"]
+    gap:
+      patterns:
+        - "(?:no|few|little)\\s+(?:study|studies|research|work)"
+        - "gap in (?:the )?literature"
+        - "has not been (?:examined|studied|investigated|addressed)"
+        - "remains (?:largely )?(?:unexamined|unexplored|unstudied)"
+      keywords: ["gap"]
+    aim_objectives:
+      patterns:
+        - "this (?:study|paper|chapter|thesis|research) (?:aims?|seeks?|sets out)"
+        - "(?:the )?objective(?:s)? (?:is|are|was|were|of)"
+        - "the aim of"
+        - "the purpose of (?:this|the) (?:study|paper|chapter)"
+      keywords: ["aim", "objective", "purpose"]
+    structure:
+      patterns:
+        - "organi[sz]ed as follows"
+        - "remainder of (?:this|the) (?:paper|chapter|thesis|study)"
+        - "(?:section|chapter)\\s+\\d+\\s+(?:presents?|describes?|introduces?|discusses?)"
+        - "structured as follows"
+      keywords: []
+
+methods:
+  aliases: ["methods", "methodology", "research design", "materials and methods", "approach"]
+  components:
+    design:
+      patterns:
+        - "(?:study|research) design"
+        - "(?:qualitative|quantitative|mixed[- ]methods?)"
+        - "(?:cross[- ]sectional|longitudinal|cohort|case[- ]control|experimental|observational)"
+      keywords: ["design"]
+    sample:
+      patterns:
+        - "(?:sample|sampling) (?:size|frame|strategy|method|technique)"
+        - "(?:participants?|respondents?) (?:were|comprised|included)"
+        - "n\\s*=\\s*\\d+"
+        - "purposive sampling"
+        - "convenience sampling"
+      keywords: ["sample", "participants", "respondents"]
+    data_collection:
+      patterns:
+        - "data (?:were|was) (?:collected|gathered|obtained)"
+        - "(?:semi[- ]structured )?interviews? (?:were|was)"
+        - "(?:online|self[- ]administered|paper) (?:survey|questionnaire)"
+        - "field(?:work|notes)"
+      keywords: ["interviews", "survey", "questionnaire", "instrument"]
+    analysis:
+      patterns:
+        - "(?:thematic|content|discourse|regression|chi[- ]square|t[- ]test) analysis"
+        - "data (?:were|was) analy[sz]ed"
+        - "coded? (?:using|with)"
+        - "spss|stata|r studio|nvivo|atlas\\.ti"
+      keywords: ["analysis", "analyzed", "analysed"]
+    ethics:
+      patterns:
+        - "(?:ethical |ethics )(?:approval|clearance|committee|board)"
+        - "informed consent"
+        - "institutional review board|irb"
+        - "(?:participants? )?(?:were )?anonymi[sz]ed"
+      keywords: ["ethics", "consent"]
+
+results:
+  aliases: ["results", "findings"]
+  components:
+    descriptive:
+      patterns:
+        - "(?:table|figure)\\s+\\d+"
+        - "\\d+(?:\\.\\d+)?\\s*%"
+        - "mean (?:of |was |=)"
+        - "median (?:of |was |=)"
+      keywords: ["mean", "median", "percentage"]
+    inferential:
+      patterns:
+        - "p\\s*[<>=]\\s*0?\\.\\d+"
+        - "(?:significant|significance) (?:at|level|difference|effect)"
+        - "confidence interval"
+        - "ci\\s*=\\s*\\["
+      keywords: ["significant", "significance"]
+    themes:
+      patterns:
+        - "(?:emerging |emerged |key )themes?"
+        - "theme\\s+\\d+"
+        - "(?:participants?|respondents?) (?:reported|noted|described|expressed)"
+      keywords: ["themes", "categories"]
+    figures_tables:
+      patterns:
+        - "(?:see|presents|shows?|illustrates?) (?:table|figure)\\s+\\d+"
+        - "as (?:shown|illustrated) in"
+      keywords: []
+
+discussion:
+  aliases: ["discussion"]
+  components:
+    interpretation:
+      patterns:
+        - "these (?:findings?|results?) (?:suggest|indicate|demonstrate|imply)"
+        - "this (?:finding|result) (?:suggests?|indicates?)"
+        - "consistent with"
+        - "in line with"
+      keywords: []
+    comparison:
+      patterns:
+        - "(?:similar|consistent|in line) (?:to|with) (?:the work of |findings of |\\w+,? )"
+        - "in (?:contrast|contradiction) (?:to|with)"
+        - "echoes? (?:the )?(?:work|findings) of"
+      keywords: []
+    limitations:
+      patterns:
+        - "limitations? (?:of|to) (?:this|the) (?:study|research|work)"
+        - "(?:should be|must be) (?:noted|acknowledged) that"
+        - "caveat"
+      keywords: ["limitations", "limitation"]
+    implications:
+      patterns:
+        - "implications? for (?:practice|policy|research|theory)"
+        - "(?:practical|theoretical|policy) implications?"
+        - "future (?:research|work|studies?)"
+      keywords: ["implications"]
+
+conclusion:
+  aliases: ["conclusion", "concluding remarks", "summary"]
+  components:
+    restatement:
+      patterns:
+        - "this (?:study|paper|chapter|research) (?:has |has been )?(?:examined|investigated|explored|presented|argued)"
+        - "in this (?:study|paper|chapter)"
+      keywords: []
+    main_findings:
+      patterns:
+        - "(?:the |key )?(?:main |key |central )(?:findings?|results?|argument)"
+        - "found that"
+        - "demonstrate(?:d|s)? that"
+      keywords: []
+    contribution:
+      patterns:
+        - "contribut(?:es?|ion|ing) to (?:the )?(?:literature|field|debate|understanding)"
+        - "advances?\\s+(?:our )?understanding"
+      keywords: ["contribution"]
+    future_work:
+      patterns:
+        - "future (?:research|work|studies?) (?:should|could|may|might)"
+        - "further (?:research|work) is needed"
+      keywords: []
+
+literature_review:
+  aliases: ["literature review", "review of literature", "review of the literature", "related work", "prior work"]
+  components:
+    scope:
+      patterns:
+        - "this review (?:covers|examines|considers|focuses)"
+        - "the (?:scope|focus) of (?:this )?review"
+      keywords: []
+    synthesis:
+      patterns:
+        - "(?:taken together|across studies|in synthesis)"
+        - "(?:converging|consistent) (?:evidence|findings)"
+      keywords: ["synthesis"]
+    gap:
+      patterns:
+        - "(?:no|few|little)\\s+(?:study|studies|research)"
+        - "gap in (?:the )?literature"
+        - "remains (?:largely )?(?:unexamined|unexplored)"
+      keywords: ["gap"]
+    theoretical_frame:
+      patterns:
+        - "(?:theoretical|conceptual) (?:framework|lens|perspective)"
+        - "drawing on (?:the )?(?:work|theory) of"
+      keywords: ["framework", "theory"]

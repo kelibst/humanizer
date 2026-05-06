@@ -1,0 +1,252 @@
+{
+  "name": "sis-caro-humanizer",
+  "displayName": "Humanizer",
+  "description": "AI-risk scoring and humanization for academic markdown files. Talks to the local humanize serve daemon.",
+  "version": "1.0.0",
+  "publisher": "sis-caro",
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "icon": "resources/icon.png",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/sis-caro/humanizer"
+  },
+  "main": "./out/extension.js",
+  "activationEvents": [
+    "onLanguage:markdown"
+  ],
+  "contributes": {
+    "commands": [
+      {
+        "command": "humanizer.startDaemon",
+        "title": "Start Humanizer Daemon",
+        "category": "Humanizer"
+      },
+      {
+        "command": "humanizer.scoreFile",
+        "title": "Score File",
+        "category": "Humanizer",
+        "icon": "$(zap)"
+      },
+      {
+        "command": "humanizer.transformSelection",
+        "title": "Rewrite Selection",
+        "category": "Humanizer",
+        "icon": "$(sync)"
+      },
+      {
+        "command": "humanizer.suggestSelection",
+        "title": "Suggest 3 for Selection",
+        "category": "Humanizer",
+        "icon": "$(lightbulb)"
+      },
+      {
+        "command": "humanizer.openSettings",
+        "title": "Open Humanizer Settings",
+        "category": "Humanizer"
+      },
+      {
+        "command": "humanizer.scoreSection",
+        "title": "Score Section",
+        "category": "Humanizer"
+      },
+      {
+        "command": "humanizer.transformSection",
+        "title": "Rewrite Section",
+        "category": "Humanizer"
+      },
+      {
+        "command": "humanizer.transformAll",
+        "title": "Rewrite All Sections",
+        "category": "Humanizer"
+      },
+      {
+        "command": "humanizer.exportDocx",
+        "title": "Export to .docx",
+        "category": "Humanizer",
+        "icon": "$(cloud-download)"
+      },
+      {
+        "command": "humanizer.showProgress",
+        "title": "Show Section Progress",
+        "category": "Humanizer"
+      },
+      {
+        "command": "humanizer.insertCitation",
+        "title": "Insert Citation",
+        "category": "Humanizer",
+        "icon": "$(book)"
+      },
+      {
+        "command": "humanizer.openOutline",
+        "title": "Open Outline Panel",
+        "category": "Humanizer"
+      },
+      {
+        "command": "humanizer.openDashboard",
+        "title": "Open Research Dashboard",
+        "category": "Humanizer",
+        "icon": "$(graph)"
+      },
+      {
+        "command": "humanizer.actions",
+        "title": "Humanizer Actions…",
+        "category": "Humanizer"
+      },
+      {
+        "command": "humanizer.openWelcome",
+        "title": "Show Welcome",
+        "category": "Humanizer"
+      }
+    ],
+    "keybindings": [
+      {
+        "command": "humanizer.scoreFile",
+        "key": "ctrl+alt+h",
+        "mac": "cmd+alt+h",
+        "when": "editorTextFocus && resourceLangId == markdown"
+      },
+      {
+        "command": "humanizer.transformSelection",
+        "key": "ctrl+alt+r",
+        "mac": "cmd+alt+r",
+        "when": "editorTextFocus && resourceLangId == markdown"
+      },
+      {
+        "command": "humanizer.insertCitation",
+        "key": "ctrl+alt+i",
+        "mac": "cmd+alt+i",
+        "when": "editorTextFocus && resourceLangId == markdown"
+      },
+      {
+        "command": "humanizer.actions",
+        "key": "ctrl+alt+space",
+        "mac": "cmd+alt+space"
+      }
+    ],
+    "menus": {
+      "editor/title": [
+        {
+          "command": "humanizer.scoreFile",
+          "group": "navigation@1",
+          "when": "resourceLangId == markdown"
+        },
+        {
+          "command": "humanizer.transformSelection",
+          "group": "navigation@2",
+          "when": "resourceLangId == markdown"
+        },
+        {
+          "command": "humanizer.suggestSelection",
+          "group": "navigation@3",
+          "when": "resourceLangId == markdown"
+        },
+        {
+          "command": "humanizer.exportDocx",
+          "group": "navigation@4",
+          "when": "resourceLangId == markdown"
+        },
+        {
+          "command": "humanizer.insertCitation",
+          "group": "navigation@5",
+          "when": "resourceLangId == markdown"
+        }
+      ]
+    },
+    "viewsWelcome": [
+      {
+        "view": "humanizer.sections",
+        "contents": "Welcome to Humanizer — an AI-risk scorer and rewriter for academic markdown.\n\n[Score File](command:humanizer.scoreFile)\n[Open Research Dashboard](command:humanizer.openDashboard)\n[Humanizer Actions…](command:humanizer.actions)\n[Show Welcome](command:humanizer.openWelcome)\n\nOpen a `.md` file to populate this view."
+      }
+    ],
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "humanizer",
+          "title": "Humanizer",
+          "icon": "resources/icon.svg"
+        }
+      ]
+    },
+    "views": {
+      "humanizer": [
+        {
+          "id": "humanizer.sidebar",
+          "name": "Score & Rewrite",
+          "type": "webview"
+        },
+        {
+          "id": "humanizer.sections",
+          "name": "Section Progress",
+          "type": "tree"
+        }
+      ]
+    },
+    "configuration": {
+      "title": "Humanizer",
+      "properties": {
+        "humanizer.daemonUrl": {
+          "type": "string",
+          "default": "https://localhost:9999",
+          "description": "Bridge daemon URL (run 'humanize serve' to start it)."
+        },
+        "humanizer.token": {
+          "type": "string",
+          "default": "",
+          "description": "Bearer token for the bridge daemon. Find it in ~/.config/humanizer/serve/token after 'humanize serve' starts."
+        },
+        "humanizer.profile": {
+          "type": "string",
+          "default": "default_ghanaian",
+          "description": "Active voice profile name (must exist in ~/.config/humanizer/profiles/)."
+        },
+        "humanizer.backend": {
+          "type": "string",
+          "default": "ollama",
+          "enum": [
+            "ollama",
+            "anthropic",
+            "openai",
+            "gemini"
+          ],
+          "description": "LLM backend to use for the rewrite stage."
+        },
+        "humanizer.autoScore": {
+          "type": "boolean",
+          "default": true,
+          "description": "Automatically score the active .md file on save and update the status bar."
+        },
+        "humanizer.includeLlm": {
+          "type": "boolean",
+          "default": false,
+          "description": "Include the LLM rewrite stage in transforms (slower; requires a configured backend)."
+        },
+        "humanizer.binaryPath": {
+          "type": "string",
+          "default": "humanize",
+          "description": "Path to the humanize binary. Defaults to 'humanize' (assumes it is on PATH)."
+        },
+        "humanizer.idleScore": {
+          "type": "boolean",
+          "default": true,
+          "description": "Refresh research panels (Outline, Checklist, Readability) idly on save. Disable to score only on explicit commands."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "vscode:prepublish": "npm run compile"
+  },
+  "devDependencies": {
+    "@types/node": "^25.6.0",
+    "@types/vscode": "^1.85.0",
+    "@vscode/vsce": "^2.24.0",
+    "typescript": "^5.3.3"
+  }
+}

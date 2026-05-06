@@ -1,0 +1,670 @@
+/* Humanizer VS Code sidebar — adapted from addons/google-docs/sidebar.css.html */
+
+:root {
+  --hz-bg:        var(--vscode-sideBar-background, #ffffff);
+  --hz-fg:        var(--vscode-foreground, #202124);
+  --hz-muted:     var(--vscode-descriptionForeground, #5f6368);
+  --hz-line:      var(--vscode-widget-border, #e0e0e0);
+  --hz-accent:    var(--vscode-button-background, #1a73e8);
+  --hz-accent-fg: var(--vscode-button-foreground, #ffffff);
+  --hz-ok:        #1e8e3e;
+  --hz-warn:      #f9ab00;
+  --hz-err:       #d93025;
+  --hz-low:       #1e8e3e;
+  --hz-med:       #f9ab00;
+  --hz-high:      #d93025;
+  --hz-radius:    4px;
+  --hz-shadow:    0 1px 2px rgba(0, 0, 0, 0.12);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font-family: var(--vscode-font-family, 'Segoe UI', -apple-system, BlinkMacSystemFont, sans-serif);
+  font-size: var(--vscode-font-size, 13px);
+  color: var(--hz-fg);
+  background: var(--hz-bg);
+}
+
+.hz-app {
+  padding: 10px 10px 20px 10px;
+}
+
+/* ---------------------------------------------------------------------------
+   Header
+   --------------------------------------------------------------------------- */
+
+.hz-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+
+.hz-title {
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.2px;
+  text-transform: uppercase;
+  color: var(--hz-muted);
+}
+
+.hz-icon-btn {
+  background: transparent;
+  border: 1px solid transparent;
+  color: var(--hz-muted);
+  font-size: 15px;
+  cursor: pointer;
+  padding: 3px 6px;
+  border-radius: var(--hz-radius);
+  line-height: 1;
+}
+
+.hz-icon-btn:hover {
+  background: var(--vscode-toolbar-hoverBackground, #f1f3f4);
+  border-color: var(--hz-line);
+  color: var(--hz-fg);
+}
+
+/* ---------------------------------------------------------------------------
+   Status bar
+   --------------------------------------------------------------------------- */
+
+.hz-status {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 8px;
+  margin-bottom: 10px;
+  border-radius: var(--hz-radius);
+  background: var(--vscode-editorWidget-background, #f8f9fa);
+  border: 1px solid var(--hz-line);
+  font-size: 11px;
+  color: var(--hz-muted);
+}
+
+.hz-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--hz-muted);
+  flex-shrink: 0;
+}
+
+.hz-status--ok    .hz-dot { background: var(--hz-ok); }
+.hz-status--warn  .hz-dot { background: var(--hz-warn); }
+.hz-status--err   .hz-dot { background: var(--hz-err); }
+.hz-status--busy  .hz-dot {
+  background: var(--hz-accent);
+  animation: hz-pulse 1.2s ease-in-out infinite;
+}
+
+@keyframes hz-pulse {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0.3; }
+}
+
+/* ---------------------------------------------------------------------------
+   Action buttons
+   --------------------------------------------------------------------------- */
+
+.hz-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 12px;
+}
+
+.hz-btn {
+  appearance: none;
+  border: 1px solid var(--hz-line);
+  border-radius: var(--hz-radius);
+  padding: 6px 12px;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  background: var(--vscode-button-secondaryBackground, #fff);
+  color: var(--vscode-button-secondaryForeground, var(--hz-fg));
+  transition: opacity 120ms;
+}
+
+.hz-btn:hover:not(:disabled) {
+  opacity: 0.85;
+}
+
+.hz-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.hz-btn--primary {
+  background: var(--hz-accent);
+  color: var(--hz-accent-fg);
+  border-color: var(--hz-accent);
+}
+
+.hz-btn--secondary {
+  background: var(--vscode-button-secondaryBackground, #fff);
+}
+
+.hz-rewrite-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.hz-rewrite-row .hz-btn {
+  flex: 1;
+}
+
+.hz-checkbox {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  color: var(--hz-muted);
+  user-select: none;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+/* ---------------------------------------------------------------------------
+   Panels
+   --------------------------------------------------------------------------- */
+
+.hz-panel {
+  border: 1px solid var(--hz-line);
+  border-radius: var(--hz-radius);
+  padding: 8px 10px;
+  margin-bottom: 10px;
+  box-shadow: var(--hz-shadow);
+}
+
+.hz-panel-title {
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+  color: var(--hz-muted);
+  margin-bottom: 6px;
+}
+
+.hz-hidden {
+  display: none !important;
+}
+
+/* ---------------------------------------------------------------------------
+   Score gauge
+   --------------------------------------------------------------------------- */
+
+.hz-gauge {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.hz-gauge-bar {
+  position: relative;
+  width: 100%;
+  height: 8px;
+  background: var(--vscode-editorWidget-background, #f1f3f4);
+  border-radius: 999px;
+  overflow: hidden;
+}
+
+.hz-gauge-fill {
+  height: 100%;
+  background: linear-gradient(90deg, var(--hz-low), var(--hz-med), var(--hz-high));
+  border-radius: 999px;
+  transition: width 260ms ease-out;
+}
+
+.hz-gauge-meta {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-variant-numeric: tabular-nums;
+  font-size: 12px;
+}
+
+.hz-band {
+  font-size: 10px;
+  font-weight: 600;
+  padding: 2px 7px;
+  border-radius: 999px;
+  letter-spacing: 0.4px;
+}
+
+.hz-band--low  { background: #e6f4ea; color: var(--hz-low); }
+.hz-band--med  { background: #fef7e0; color: #b06000; }
+.hz-band--high { background: #fce8e6; color: var(--hz-high); }
+
+/* Feature breakdown */
+.hz-why {
+  margin-top: 8px;
+  font-size: 11px;
+}
+
+.hz-why summary {
+  cursor: pointer;
+  color: var(--hz-muted);
+  user-select: none;
+  font-size: 11px;
+}
+
+.hz-why-list {
+  margin: 5px 0 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.hz-why-list li {
+  padding: 3px 0;
+  border-top: 1px dashed var(--hz-line);
+  line-height: 1.4;
+}
+
+.hz-why-list li:first-child {
+  border-top: 0;
+}
+
+.hz-why-name {
+  font-weight: 500;
+}
+
+.hz-why-detail {
+  color: var(--hz-muted);
+  font-size: 10px;
+}
+
+/* ---------------------------------------------------------------------------
+   Suggestions
+   --------------------------------------------------------------------------- */
+
+.hz-suggest-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+
+.hz-suggest-card {
+  border: 1px solid var(--hz-line);
+  border-radius: var(--hz-radius);
+  padding: 7px 9px;
+  cursor: pointer;
+  transition: border-color 120ms, background 120ms;
+}
+
+.hz-suggest-card:hover {
+  background: var(--vscode-list-hoverBackground, #f8f9fa);
+}
+
+.hz-suggest-card--active {
+  border-color: var(--hz-accent);
+  background: var(--vscode-list-activeSelectionBackground, #e8f0fe);
+}
+
+.hz-suggest-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 3px;
+  font-size: 10px;
+  color: var(--hz-muted);
+}
+
+.hz-suggest-text {
+  font-size: 11px;
+  white-space: pre-wrap;
+  max-height: 100px;
+  overflow-y: auto;
+  line-height: 1.4;
+}
+
+/* ---------------------------------------------------------------------------
+   Activity log
+   --------------------------------------------------------------------------- */
+
+.hz-log {
+  font-family: var(--vscode-editor-font-family, 'Cascadia Code', 'Consolas', monospace);
+  font-size: 11px;
+  color: var(--hz-muted);
+  background: var(--vscode-editorWidget-background, #f8f9fa);
+  border-radius: var(--hz-radius);
+  padding: 5px 7px;
+  max-height: 130px;
+  overflow-y: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.hz-log-entry        { padding: 1px 0; }
+.hz-log-entry--err   { color: var(--hz-err); }
+.hz-log-entry--ok    { color: var(--hz-ok); }
+.hz-log-entry--warn  { color: #b06000; }
+.hz-log-entry--idle  { color: var(--hz-muted); }
+
+/* ---------------------------------------------------------------------------
+   v1.3 — research panels (Outline, Citations, Readability)
+   --------------------------------------------------------------------------- */
+
+.hz-research-panel {
+  /* `details` resets some default styling — restore the panel feel. */
+  padding: 6px 10px 10px 10px;
+}
+
+.hz-research-panel summary {
+  cursor: pointer;
+  list-style: none;
+  outline: none;
+}
+
+.hz-research-panel summary::-webkit-details-marker {
+  display: none;
+}
+
+.hz-research-panel summary::before {
+  content: "▸ ";
+  color: var(--hz-muted);
+  font-size: 9px;
+}
+
+.hz-research-panel[open] summary::before {
+  content: "▾ ";
+}
+
+.hz-research-controls {
+  display: flex;
+  justify-content: flex-end;
+  margin: 4px 0 6px 0;
+}
+
+.hz-research-controls .hz-btn {
+  padding: 3px 8px;
+  font-size: 10px;
+}
+
+.hz-empty {
+  font-size: 11px;
+  color: var(--hz-muted);
+  padding: 4px 0;
+}
+
+/* Outline */
+
+.hz-outline-list {
+  list-style: none;
+  padding: 0;
+  margin: 0 0 4px 0;
+}
+
+.hz-outline-item {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 3px 4px;
+  font-size: 11px;
+  border-radius: var(--hz-radius);
+  cursor: pointer;
+}
+
+.hz-outline-item:hover {
+  background: var(--vscode-list-hoverBackground, #f1f3f4);
+}
+
+.hz-outline-item--l1 { padding-left: 4px;  font-weight: 600; }
+.hz-outline-item--l2 { padding-left: 14px; }
+.hz-outline-item--l3 { padding-left: 24px; color: var(--hz-muted); }
+.hz-outline-item--l4 { padding-left: 34px; color: var(--hz-muted); }
+.hz-outline-item--l5 { padding-left: 44px; color: var(--hz-muted); font-size: 10px; }
+.hz-outline-item--l6 { padding-left: 54px; color: var(--hz-muted); font-size: 10px; }
+
+.hz-outline-words {
+  font-variant-numeric: tabular-nums;
+  color: var(--hz-muted);
+  font-size: 10px;
+  white-space: nowrap;
+}
+
+/* Citations */
+
+.hz-citations-section {
+  margin-top: 6px;
+}
+
+.hz-citations-head {
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  color: var(--hz-muted);
+  margin-bottom: 3px;
+}
+
+.hz-citations-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.hz-citations-list li {
+  font-size: 11px;
+  padding: 3px 4px;
+  border-bottom: 1px dashed var(--hz-line);
+  cursor: pointer;
+  word-break: break-word;
+}
+
+.hz-citations-list li:hover {
+  background: var(--vscode-list-hoverBackground, #f1f3f4);
+}
+
+/* Readability */
+
+.hz-readability-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 11px;
+}
+
+.hz-readability-table th {
+  text-align: left;
+  font-weight: 500;
+  color: var(--hz-muted);
+  padding: 3px 6px 3px 0;
+}
+
+.hz-readability-table td {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  padding: 3px 0;
+}
+
+/* ---------------------------------------------------------------------------
+   v1.4 — Welcome cards
+   --------------------------------------------------------------------------- */
+
+.hz-welcome {
+  border: 1px solid var(--hz-line);
+  border-radius: var(--hz-radius);
+  padding: 12px;
+  margin-bottom: 12px;
+  background: var(--vscode-editorWidget-background, transparent);
+}
+
+.hz-welcome-title {
+  font-size: 13px;
+  font-weight: 600;
+  margin-bottom: 4px;
+}
+
+.hz-welcome-sub {
+  font-size: 11px;
+  color: var(--hz-muted);
+  margin-bottom: 10px;
+}
+
+.hz-welcome-cards {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.hz-card {
+  appearance: none;
+  text-align: left;
+  border: 1px solid var(--hz-line);
+  border-radius: var(--hz-radius);
+  padding: 8px 10px;
+  background: var(--hz-bg);
+  color: var(--hz-fg);
+  cursor: pointer;
+  transition: background 120ms, border-color 120ms;
+}
+
+.hz-card:hover {
+  background: var(--vscode-list-hoverBackground, #f1f3f4);
+  border-color: var(--hz-accent);
+}
+
+.hz-card-icon {
+  font-size: 18px;
+  line-height: 1;
+  margin-bottom: 4px;
+}
+
+.hz-card-title {
+  font-size: 11px;
+  font-weight: 600;
+  margin-bottom: 2px;
+}
+
+.hz-card-text {
+  font-size: 10px;
+  color: var(--hz-muted);
+  line-height: 1.3;
+}
+
+.hz-welcome-footer {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 8px;
+}
+
+/* ---------------------------------------------------------------------------
+   v1.4 — Research-assistant forms + prompt outputs
+   --------------------------------------------------------------------------- */
+
+.hz-form {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 6px;
+}
+
+.hz-form label {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 10px;
+  color: var(--hz-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+}
+
+.hz-form input,
+.hz-form textarea,
+.hz-form select {
+  font: inherit;
+  font-size: 12px;
+  text-transform: none;
+  letter-spacing: 0;
+  color: var(--hz-fg);
+  background: var(--vscode-input-background, #ffffff);
+  border: 1px solid var(--vscode-input-border, var(--hz-line));
+  border-radius: var(--hz-radius);
+  padding: 4px 6px;
+  outline: none;
+}
+
+.hz-form input:focus,
+.hz-form textarea:focus,
+.hz-form select:focus {
+  border-color: var(--hz-accent);
+}
+
+.hz-form-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 4px;
+}
+
+.hz-prompt-output-wrap {
+  margin-top: 8px;
+}
+
+.hz-prompt-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 4px;
+}
+
+.hz-prompt-actions .hz-btn {
+  padding: 3px 8px;
+  font-size: 10px;
+}
+
+.hz-prompt-meta {
+  font-size: 10px;
+  color: var(--hz-muted);
+  margin-right: auto;
+}
+
+.hz-prompt-output {
+  font-family: var(--vscode-editor-font-family, 'Cascadia Code', 'Consolas', monospace);
+  font-size: 11px;
+  background: var(--vscode-editorWidget-background, #f8f9fa);
+  color: var(--hz-fg);
+  border: 1px solid var(--hz-line);
+  border-radius: var(--hz-radius);
+  padding: 6px 8px;
+  margin: 0;
+  max-height: 240px;
+  overflow: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+/* Inspector findings list */
+
+.hz-findings {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 6px;
+}
+
+.hz-finding {
+  border: 1px solid var(--hz-line);
+  border-radius: var(--hz-radius);
+  padding: 6px 8px;
+  background: var(--vscode-editorWidget-background, transparent);
+}
+
+.hz-finding-name {
+  font-size: 11px;
+  font-weight: 600;
+  margin-bottom: 2px;
+}
+
+.hz-finding-suggestion {
+  font-size: 11px;
+  color: var(--hz-muted);
+  margin-bottom: 4px;
+}

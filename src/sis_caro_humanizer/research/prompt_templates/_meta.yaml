@@ -1,0 +1,61 @@
+study_starter:
+  name: "Study starter & title suggester"
+  description: "Form-driven; produces 8 candidate titles + outline scaffold."
+  fields:
+    - {name: topic,      type: string, required: true}
+    - {name: discipline, type: string, required: true}
+    - {name: gap,        type: string, required: false}
+    - {name: audience,   type: string, required: false}
+    - {name: methods,    type: string, required: false}
+
+title_suggester:
+  name: "Title suggester"
+  description: "Generates 8 candidate titles from an abstract."
+  fields:
+    - {name: abstract, type: string, required: true}
+
+methodology_reviewer:
+  name: "Methodology reviewer"
+  description: "Critiques a methods section against published reporting standards."
+  fields:
+    - {name: section_text, type: string, required: true}
+
+data_analysis_interpreter:
+  name: "Data analysis interpreter"
+  description: "Translates raw results into plain-language interpretation."
+  fields:
+    - {name: results_text, type: string, required: true}
+    - {name: study_aim,    type: string, required: false}
+
+discussion_drafter:
+  name: "Discussion drafter"
+  description: "Drafts a discussion section from results bullets and research questions."
+  fields:
+    - {name: results_bullets,    type: string, required: true}
+    - {name: research_questions, type: string, required: false}
+
+limitations_explorer:
+  name: "Limitations explorer"
+  description: "Surfaces internal-, external-, construct-validity threats."
+  fields:
+    - {name: methods_text, type: string, required: true}
+    - {name: results_text, type: string, required: false}
+
+reviewer_1_methodology:
+  name: "Reviewer 1 (methodology)"
+  description: "Acts as a strict methodology peer reviewer."
+  fields:
+    - {name: full_text, type: string, required: true}
+
+reviewer_2_framing:
+  name: "Reviewer 2 (framing)"
+  description: "Acts as a peer reviewer focused on framing, contribution, and clarity."
+  fields:
+    - {name: full_text, type: string, required: true}
+
+missing_inspector:
+  name: "Section missing-bits inspector"
+  description: "Lists what is missing from a draft section, by section type."
+  fields:
+    - {name: section_text, type: string, required: true}
+    - {name: section_type, type: string, required: true}

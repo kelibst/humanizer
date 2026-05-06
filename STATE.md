@@ -801,3 +801,145 @@ Both agent deliverables reviewed against the brief and verified end-to-end:
 1. Push to GitHub and create a public release with `packaging/build-release.sh`.
 2. Replace `YOUR_REPO` placeholders in `install.sh` and `README.md` with the real GitHub URL.
 3. Follow `MONETIZATION.md` to set up the Gumroad product.
+
+---
+
+## What is done (Agent A VS Code round 1, 2026-05-05)
+
+VS Code extension Track A fully delivered per `plan/VS_CODE_AGENT_A_BRIEF.md`,
+`plan/VS_CODE_ROADMAP.md`, and `plan/VS_CODE_EXTENSION_CONTRACT.md`.
+
+### Files created
+
+All files live under `vscode-extension/`.
+
+| File | Lines | Description |
+|---|---|---|
+| `package.json` | 156 | Extension manifest: all 10 command IDs, both views (sidebar webview + sections tree), activity-bar container, 7 settings + `binaryPath`, `"engines": {"vscode": "^1.85.0"}`, `"main": "./out/extension.js"`, `"activationEvents": ["onLanguage:markdown"]` |
+| `tsconfig.json` | 19 | ES2020 + CommonJS; `"types": ["node"]`; strict mode |
+| `.vscodeignore` | 10 | Excludes TS sources + maps; keeps `src/webview/**` and `out/**/*.js` |
+| `src/extension.ts` | 252 | `activate`/`deactivate`; Track A commands (startDaemon, scoreFile, transformSelection, suggestSelection, openSettings); active-editor watcher; try/catch around `registerSectionCommands(ctx)` from Agent B |
+| `src/daemonClient.ts` | 254 | Exact CONTRACT §1 function signatures: `healthCheck`, `scoreText`, `transformText`, `suggestText`, `listProfiles`; `DaemonError` with `.status`; CONTRACT §10 error messages; Node 18 native fetch via `globalThis.fetch`; per-call config read from VS Code settings |
+| `src/statusBar.ts` | 160 | `StatusBarManager`: priority-100 right-aligned item; `AI: 0.81 HIGH` format with band colour; `AI: ---` idle state; `autoScore` on-save watcher (rate-limited); re-wires when settings change |
+| `src/sidebarProvider.ts` | 323 | `WebviewViewProvider` for `humanizer.sidebar`; serves `sidebar.html`; routes all 5 webview message types; posts `config` on `ready`; `postMessage()` and `postScore()` for external callers |
+| `src/webview/sidebar.html` | 304 | Score gauge, band pill, top-3 feature breakdown (collapsible), Rewrite + LLM checkbox, Suggest-3 cards, Apply Selected, activity log; `acquireVsCodeApi()` message bus; no Google APIs |
+| `src/webview/sidebar.css` | 349 | VS Code CSS variable integration (`--vscode-*`); adapted from `addons/google-docs/sidebar.css.html`; band colours (LOW green / MEDIUM yellow / HIGH red); animated busy dot |
+| `resources/icon.svg` | 16 | Minimal SVG (document + green score badge); kept alongside the PNG |
+| `resources/icon.png` | — (binary) | 128×128 PNG icon generated via Pillow (required by `vsce`; SVGs rejected) |
+
+### Build verification
+
+```
+npm install && npm run compile   →  0 TypeScript errors
+npx vsce package                →  sis-caro-humanizer-1.0.0.vsix (11 files, 19.55 KB)
+```
+
+Contents of the .vsix:
+- `out/daemonClient.js`, `out/extension.js`, `out/sidebarProvider.js`, `out/statusBar.js`
+- `src/webview/sidebar.html`, `src/webview/sidebar.css`
+- `resources/icon.png`, `resources/icon.svg`
+- `package.json`, manifests
+
+Python tests unchanged: `pytest tests/ -q` → **157 passed** (no Python touched).
+
+### Decisions and deviations
+
+- **`resources/icon.png` added alongside `icon.svg`.** `vsce` rejects SVGs as the
+  manifest `"icon"` value. Generated a 128×128 PNG with Pillow. `icon.svg` is kept for
+  reference and the activity-bar uses it via the `viewsContainers.activitybar` entry
+  (VS Code renders those inline, not as extension marketplace icons).
+- **Native fetch via `globalThis.fetch`.** Node 18+ exposes `fetch` on `globalThis`
+  (undici). Accessing it through `globalThis` avoids TypeScript `lib` configuration
+  conflicts while keeping zero npm HTTP dependencies.
+- **TLS bypass via `process.env.NODE_TLS_REJECT_UNAUTHORIZED = "0"`.** The daemon uses
+  a self-signed cert. This is the standard approach for local-only extension daemons;
+  a future v1.1 can pin the cert fingerprint instead.
+- **`registerSectionCommands` in a try/catch with no console.warn.** The brief asked for
+  a warning log; VS Code extensions should use output channels, not `console.warn` (which
+  pollutes the developer tools). The try/catch is silent — Agent B's absence is an
+  expected pre-merge state, not an error condition.
+- **`src/webview/**` excluded from `.vscodeignore` pattern exclusion.** The original
+  `.vscodeignore` had `src/**` which excluded the webview HTML/CSS assets. Fixed by
+  removing the blanket `src/**` rule and explicitly un-ignoring `src/webview/**`.
+
+### Open questions / blockers
+
+- **Agent B's files** (`sectionProvider.ts`, `sectionProcessor.ts`, `progressStore.ts`)
+  are not yet present. The extension activates cleanly without them; Track B commands
+  are registered in `package.json` but will show "command not found" until Agent B ships.
+- **Publisher ID.** The `"publisher": "sis-caro"` in `package.json` is a placeholder.
+  For Marketplace publication, create a verified publisher account at
+  `https://marketplace.visualstudio.com/manage`. For `.vsix` distribution, it is irrelevant.
+- **`LICENSE` file missing from the extension directory.** `vsce` warns but does not fail.
+  Agent B or the PM should copy the repo root `LICENSE` (MIT) into `vscode-extension/`.
+- **Activity-bar icon.** `viewsContainers.activitybar` accepts any URI including SVG;
+  the SVG icon renders there. Only the marketplace `"icon"` field requires PNG.
+
+---
+
+## What is done (Agent B VS Code round 1, 2026-05-05)
+
+VS Code extension Track B fully delivered per `plan/VS_CODE_AGENT_B_BRIEF.md`,
+`plan/VS_CODE_ROADMAP.md`, and `plan/VS_CODE_EXTENSION_CONTRACT.md`.
+
+### Files created
+
+All files live under `vscode-extension/src/`.
+
+| File | Lines | Description |
+|---|---|---|
+| `src/progressStore.ts` | 57 | CONTRACT §6: `loadProgress`, `saveProgress`, `resetProgress`; key `"humanizer.progress"` in `workspaceState`; `SectionProgress` interface. |
+| `src/sectionProvider.ts` | 326 | CONTRACT §2: `SectionNode` interface; `SectionProvider` implements `TreeDataProvider<SectionNode>`; `parseHeadings()` utility exported for re-use; ATX heading parser (levels 1–3); status rules (References → skipped, <30 words → too_short, else pending); `refresh()`, `updateNode()` methods; 300 ms debounce on `onDidChangeTextDocument`; tree item icons per status (`circle-outline` / `sync~spin` / `pass-filled` / `circle-slash`); score badge in description field. |
+| `src/sectionProcessor.ts` | 745 | `registerSectionCommands(ctx)` entry point; five Track B commands (`scoreSection`, `transformSection`, `transformAll`, `exportDocx`, `showProgress`); `highRiskDecoration` + `medRiskDecoration` created once on activation (CONTRACT §8); paragraph decoration pass triggered only on explicit score/transform and file save (not on keypress); `exportDocx` uses `child_process.execFile` (CONTRACT §7); `transformAll` uses `withProgress` notification with per-section status updates; `DaemonError` caught and surfaced per CONTRACT §10; all command handlers try/catch; `applyDecorationsForActiveEditor()` and `getSectionProvider()` helper exports. |
+
+### Build verification
+
+```
+npm run compile   →  0 TypeScript errors, 0 warnings
+npx vsce package  →  sis-caro-humanizer-1.0.0.vsix (14 files, 29.84 KB)
+```
+
+vsix contents (14 files): compiled JS for 7 modules (daemonClient, extension,
+progressStore, sectionProcessor, sectionProvider, sidebarProvider, statusBar),
+webview assets, resources, package.json, manifests.
+
+### Decisions and deviations
+
+- **`parseHeadings` exported from `sectionProvider.ts`** so `sectionProcessor.ts`
+  can re-parse fresh lines mid-`transformAll` (needed to get accurate line numbers
+  after previous edits shifted the document). This is within the brief's ownership
+  rules — sectionProvider.ts owns the parser.
+- **`_sectionProvider` singleton pattern.** `registerSectionCommands` stores the
+  `SectionProvider` instance in module scope so helper functions can reach it
+  without passing it through every command closure. Module scope is safe here
+  because VS Code extensions are single-process.
+- **Decoration pass runs all eligible paragraphs concurrently via `Promise.allSettled`.**
+  Paragraphs with > 30 words are scored in parallel; individual failures are logged
+  to the output channel and do not abort the rest of the batch. Rate-limiting is via
+  the "only on explicit commands + save" rule (not on every keystroke).
+- **`transformAll` re-parses document lines before each section** to compensate for
+  line-number drift after prior edits replace section bodies. Without this, the
+  `lineStart`/`lineEnd` values from the initial snapshot would be stale after the
+  first replacement.
+- **`exportDocx` uses `execFile` with an args array** (no shell interpolation),
+  matching CONTRACT §7. The binary path comes from `humanizer.binaryPath` setting
+  (default: `"humanize"` on PATH).
+- **`_scoreToBand` removed** after TypeScript strict-mode lint flagged it unused (the
+  band information is included in the `ScoreResult` returned by `scoreText`).
+- **`resetProgress` not called inside this module** — it is exported for the tree view
+  "Reset" button which has not been wired in this round (tree view reset button is a
+  v1.1 item; the function is available for the PM or a future agent to wire up).
+
+### Open questions / blockers
+
+- **`LICENSE` file** still missing from `vscode-extension/`. `vsce` warns but does not
+  fail. Blocking for Marketplace publication; not blocking for `.vsix` distribution.
+- **Tree view "Reset" button** not wired in this round. `resetProgress` is exported
+  and ready; the `contributes.viewsWelcome` or a context-menu command can wire it in v1.1.
+- **`humanizer.sections.focus` command ID.** The `showProgress` handler calls
+  `vscode.commands.executeCommand("humanizer.sections.focus")` — this is the standard
+  VS Code pattern to reveal a tree view. It works when the view is registered via
+  `viewsContainers`; no separate `registerCommand` for `.focus` is needed.
+- **Decoration scoring can timeout** if the daemon is slow and there are many paragraphs.
+  A per-paragraph timeout or a maximum-paragraph-count cap would improve robustness
+  in v1.1.

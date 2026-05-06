@@ -1,0 +1,892 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta http-equiv="Content-Security-Policy"
+        content="default-src 'none';
+                 style-src {{CSP_SOURCE}} 'unsafe-inline';
+                 script-src 'unsafe-inline';">
+  <link rel="stylesheet" href="{{CSS_URI}}">
+  <title>Humanizer</title>
+</head>
+<body>
+  <div class="hz-app">
+
+    <!-- Header -->
+    <header class="hz-header">
+      <div class="hz-title">Humanizer</div>
+      <button id="hz-settings-btn" class="hz-icon-btn" title="Open settings">&#9881;</button>
+    </header>
+
+    <!-- Daemon status bar -->
+    <div id="hz-status" class="hz-status hz-status--idle">
+      <span id="hz-status-dot" class="hz-dot"></span>
+      <span id="hz-status-text">Ready — open a .md file to start</span>
+    </div>
+
+    <!-- Welcome cards (v1.4) — hidden by default, shown on first launch -->
+    <section id="hz-welcome" class="hz-welcome hz-hidden">
+      <div class="hz-welcome-title">Welcome to Humanizer</div>
+      <div class="hz-welcome-sub">
+        Score AI-risk, rewrite to a Ghanaian academic voice, and use research aids.
+      </div>
+      <div class="hz-welcome-cards">
+        <button class="hz-card" data-action="hz-welcome-score">
+          <div class="hz-card-icon">⚡</div>
+          <div class="hz-card-title">Score this file</div>
+          <div class="hz-card-text">Compute the AI-risk for the active markdown.</div>
+        </button>
+        <button class="hz-card" data-action="hz-welcome-rewrite">
+          <div class="hz-card-icon">↻</div>
+          <div class="hz-card-title">Rewrite selection</div>
+          <div class="hz-card-text">Run the deterministic humanizer pipeline.</div>
+        </button>
+        <button class="hz-card" data-action="hz-welcome-dashboard">
+          <div class="hz-card-icon">▤</div>
+          <div class="hz-card-title">Research dashboard</div>
+          <div class="hz-card-text">Sparkline + word bars + completeness rings.</div>
+        </button>
+        <button class="hz-card" data-action="hz-welcome-actions">
+          <div class="hz-card-icon">⌘</div>
+          <div class="hz-card-title">Browse actions</div>
+          <div class="hz-card-text">Open the Quick-Pick of every Humanizer command.</div>
+        </button>
+      </div>
+      <div class="hz-welcome-footer">
+        <button id="hz-welcome-dismiss" class="hz-btn hz-btn--secondary">Dismiss</button>
+      </div>
+    </section>
+
+    <!-- Action buttons -->
+    <section class="hz-actions">
+      <button id="hz-score-btn" class="hz-btn hz-btn--secondary">
+        Score
+      </button>
+
+      <div class="hz-rewrite-row">
+        <button id="hz-rewrite-btn" class="hz-btn hz-btn--primary">
+          Rewrite
+        </button>
+        <label class="hz-checkbox"
+               title="Include the LLM rewrite stage (slower; needs a configured backend)">
+          <input type="checkbox" id="hz-include-llm">
+          <span>LLM</span>
+        </label>
+      </div>
+
+      <button id="hz-suggest-btn" class="hz-btn hz-btn--secondary">
+        Suggest 3
+      </button>
+
+      <!-- v1.4 — Export button -->
+      <button id="hz-export-btn" class="hz-btn hz-btn--secondary"
+              title="Export the active file to <stem>_humanized.docx">
+        Export to .docx
+      </button>
+    </section>
+
+    <!-- Score panel -->
+    <section id="hz-score-panel" class="hz-panel hz-hidden">
+      <div class="hz-panel-title">Score</div>
+      <div class="hz-gauge">
+        <div class="hz-gauge-bar">
+          <div id="hz-gauge-fill" class="hz-gauge-fill" style="width:0%"></div>
+        </div>
+        <div class="hz-gauge-meta">
+          <span id="hz-gauge-value">0.000</span>
+          <span id="hz-gauge-band" class="hz-band hz-band--low">LOW</span>
+        </div>
+      </div>
+      <details id="hz-why" class="hz-why">
+        <summary>why</summary>
+        <ul id="hz-why-list" class="hz-why-list"></ul>
+      </details>
+    </section>
+
+    <!-- Suggestions panel -->
+    <section id="hz-suggest-panel" class="hz-panel hz-hidden">
+      <div class="hz-panel-title">Suggestions</div>
+      <div id="hz-suggest-list" class="hz-suggest-list"></div>
+      <button id="hz-suggest-apply" class="hz-btn hz-btn--primary" disabled>
+        Apply selected
+      </button>
+    </section>
+
+    <!-- Outline panel (v1.3) -->
+    <details id="hz-outline-panel" class="hz-panel hz-research-panel">
+      <summary class="hz-panel-title">Outline</summary>
+      <div class="hz-research-controls">
+        <button id="hz-outline-refresh" class="hz-btn hz-btn--secondary">Refresh</button>
+      </div>
+      <ol id="hz-outline-list" class="hz-outline-list"></ol>
+      <div id="hz-outline-empty" class="hz-empty">No headings.</div>
+    </details>
+
+    <!-- Citations panel (v1.3) -->
+    <details id="hz-citations-panel" class="hz-panel hz-research-panel">
+      <summary class="hz-panel-title">Citations</summary>
+      <div class="hz-research-controls">
+        <button id="hz-citations-refresh" class="hz-btn hz-btn--secondary">Refresh</button>
+      </div>
+      <div class="hz-citations-section">
+        <div class="hz-citations-head">Missing</div>
+        <ul id="hz-citations-missing" class="hz-citations-list"></ul>
+      </div>
+      <div class="hz-citations-section">
+        <div class="hz-citations-head">Orphans</div>
+        <ul id="hz-citations-orphans" class="hz-citations-list"></ul>
+      </div>
+      <div class="hz-citations-section">
+        <div class="hz-citations-head">Unused</div>
+        <ul id="hz-citations-unused" class="hz-citations-list"></ul>
+      </div>
+      <div id="hz-citations-empty" class="hz-empty">Click Refresh to scan.</div>
+    </details>
+
+    <!-- Readability panel (v1.3) -->
+    <details id="hz-readability-panel" class="hz-panel hz-research-panel">
+      <summary class="hz-panel-title">Readability</summary>
+      <div class="hz-research-controls">
+        <button id="hz-readability-refresh" class="hz-btn hz-btn--secondary">Refresh</button>
+      </div>
+      <table id="hz-readability-table" class="hz-readability-table">
+        <tbody></tbody>
+      </table>
+      <div id="hz-readability-empty" class="hz-empty">Click Refresh to compute.</div>
+    </details>
+
+    <!-- v1.4 — Study Starter -->
+    <details id="hz-study-starter" class="hz-panel hz-research-panel">
+      <summary class="hz-panel-title">Study starter</summary>
+      <div class="hz-form">
+        <label>Topic
+          <input type="text" id="hz-ss-topic" placeholder="e.g. telerehabilitation post-stroke">
+        </label>
+        <label>Discipline
+          <input type="text" id="hz-ss-discipline" placeholder="e.g. physiotherapy">
+        </label>
+        <label>Gap (optional)
+          <input type="text" id="hz-ss-gap" placeholder="What gap does this address?">
+        </label>
+        <label>Audience (optional)
+          <input type="text" id="hz-ss-audience" placeholder="Who reads this?">
+        </label>
+        <label>Methods (optional)
+          <input type="text" id="hz-ss-methods" placeholder="qualitative / quantitative / mixed">
+        </label>
+        <div class="hz-form-actions">
+          <button id="hz-ss-run" class="hz-btn hz-btn--primary">Generate prompt</button>
+        </div>
+      </div>
+      <div class="hz-prompt-output-wrap hz-hidden" id="hz-ss-output-wrap">
+        <div class="hz-prompt-actions">
+          <button class="hz-btn hz-btn--secondary hz-prompt-copy" data-target="hz-ss-output">Copy</button>
+          <button class="hz-btn hz-btn--secondary hz-prompt-send hz-hidden" data-target="hz-ss-output">Send to {backend}</button>
+        </div>
+        <pre class="hz-prompt-output" id="hz-ss-output"></pre>
+      </div>
+    </details>
+
+    <!-- v1.4 — Inspector -->
+    <details id="hz-inspector" class="hz-panel hz-research-panel">
+      <summary class="hz-panel-title">Section inspector</summary>
+      <div class="hz-research-controls">
+        <button id="hz-ins-run" class="hz-btn hz-btn--secondary">
+          Inspect section at cursor
+        </button>
+      </div>
+      <div id="hz-ins-meta" class="hz-empty">
+        Place your cursor inside a section, then click inspect.
+      </div>
+      <div id="hz-ins-findings" class="hz-findings"></div>
+    </details>
+
+    <!-- v1.4 — Templates library -->
+    <details id="hz-templates" class="hz-panel hz-research-panel">
+      <summary class="hz-panel-title">Prompt templates</summary>
+      <div class="hz-research-controls">
+        <button id="hz-tpl-open" class="hz-btn hz-btn--secondary">
+          Pick a template
+        </button>
+      </div>
+      <div id="hz-tpl-empty" class="hz-empty">
+        Pick a template, fill in the fields, then copy the rendered prompt.
+      </div>
+      <div class="hz-prompt-output-wrap hz-hidden" id="hz-tpl-output-wrap">
+        <div class="hz-prompt-actions">
+          <span id="hz-tpl-name" class="hz-prompt-meta"></span>
+          <button class="hz-btn hz-btn--secondary hz-prompt-copy" data-target="hz-tpl-output">Copy</button>
+          <button class="hz-btn hz-btn--secondary hz-prompt-send hz-hidden" data-target="hz-tpl-output">Send to {backend}</button>
+        </div>
+        <pre class="hz-prompt-output" id="hz-tpl-output"></pre>
+      </div>
+    </details>
+
+    <!-- v1.4 — Reviewer -->
+    <details id="hz-reviewer" class="hz-panel hz-research-panel">
+      <summary class="hz-panel-title">Peer-reviewer simulator</summary>
+      <div class="hz-form">
+        <label>Persona
+          <select id="hz-rev-persona">
+            <option value="r1">Reviewer 1 — methodology focus</option>
+            <option value="r2">Reviewer 2 — framing focus</option>
+          </select>
+        </label>
+        <div class="hz-form-actions">
+          <button id="hz-rev-run" class="hz-btn hz-btn--primary">Generate review prompt</button>
+        </div>
+      </div>
+      <div class="hz-prompt-output-wrap hz-hidden" id="hz-rev-output-wrap">
+        <div class="hz-prompt-actions">
+          <button class="hz-btn hz-btn--secondary hz-prompt-copy" data-target="hz-rev-output">Copy</button>
+          <button class="hz-btn hz-btn--secondary hz-prompt-send hz-hidden" data-target="hz-rev-output">Send to {backend}</button>
+        </div>
+        <pre class="hz-prompt-output" id="hz-rev-output"></pre>
+      </div>
+    </details>
+
+    <!-- Activity log -->
+    <section id="hz-log-panel" class="hz-panel">
+      <div class="hz-panel-title">Activity</div>
+      <div id="hz-log" class="hz-log"></div>
+    </section>
+
+  </div>
+
+  <script>
+    // Acquire VS Code API once — this is the message bus to the extension host.
+    const vscode = acquireVsCodeApi();
+
+    // -------------------------------------------------------------------------
+    // State
+    // -------------------------------------------------------------------------
+    let _selectedCandidate = null;   // currently selected suggestion text
+    let _settings = {};              // config pushed from the extension on "ready"
+
+    // -------------------------------------------------------------------------
+    // DOM references
+    // -------------------------------------------------------------------------
+    const el = (id) => document.getElementById(id);
+
+    const statusEl     = el('hz-status');
+    const statusDotEl  = el('hz-status-dot');
+    const statusTextEl = el('hz-status-text');
+
+    const scorePanelEl  = el('hz-score-panel');
+    const gaugeFillEl   = el('hz-gauge-fill');
+    const gaugeValueEl  = el('hz-gauge-value');
+    const gaugeBandEl   = el('hz-gauge-band');
+    const whyListEl     = el('hz-why-list');
+
+    const suggestPanelEl = el('hz-suggest-panel');
+    const suggestListEl  = el('hz-suggest-list');
+    const suggestApplyEl = el('hz-suggest-apply');
+
+    const logEl = el('hz-log');
+
+    // -------------------------------------------------------------------------
+    // Button wiring
+    // -------------------------------------------------------------------------
+
+    el('hz-settings-btn').addEventListener('click', () => {
+      vscode.postMessage({ type: 'openSettings' });
+    });
+
+    el('hz-score-btn').addEventListener('click', () => {
+      setStatus('busy', 'Scoring…');
+      vscode.postMessage({ type: 'score' });
+    });
+
+    el('hz-rewrite-btn').addEventListener('click', () => {
+      const includeLlm = el('hz-include-llm').checked;
+      setStatus('busy', includeLlm ? 'Rewriting (LLM + deterministic)…' : 'Rewriting (deterministic)…');
+      vscode.postMessage({ type: 'transform', includeLlm });
+    });
+
+    el('hz-suggest-btn').addEventListener('click', () => {
+      setStatus('busy', 'Fetching suggestions…');
+      vscode.postMessage({ type: 'suggest' });
+    });
+
+    // v1.4 — Export to .docx button (delegates to humanizer.exportDocx command)
+    const _exportBtn = el('hz-export-btn');
+    if (_exportBtn) {
+      _exportBtn.addEventListener('click', () => {
+        setStatus('busy', 'Exporting to .docx…');
+        vscode.postMessage({ type: 'exportDocx' });
+      });
+    }
+
+    suggestApplyEl.addEventListener('click', () => {
+      if (_selectedCandidate !== null) {
+        vscode.postMessage({ type: 'applyCandidate', text: _selectedCandidate });
+        addLog('Applied selected candidate.', 'ok');
+        setStatus('ok', 'Candidate applied.');
+      }
+    });
+
+    // -------------------------------------------------------------------------
+    // Message handler (extension host → webview)
+    // -------------------------------------------------------------------------
+
+    window.addEventListener('message', (event) => {
+      const msg = event.data;
+      switch (msg.type) {
+
+        case 'config':
+          _settings = msg.settings || {};
+          if (_settings.includeLlm) {
+            el('hz-include-llm').checked = true;
+          }
+          setStatus('ok', 'Daemon connected.');
+          addLog('Settings loaded.', 'ok');
+          break;
+
+        case 'score':
+          renderScore(msg.score, msg.band, msg.features || []);
+          setStatus('ok', 'Score updated.');
+          break;
+
+        case 'result':
+          addLog('Rewrite done. Post-score: ' + (msg.postScore !== undefined ? msg.postScore.toFixed(3) : '?'), 'ok');
+          if (msg.notes && msg.notes.length > 0) {
+            msg.notes.forEach((n) => addLog('  ' + n, 'warn'));
+          }
+          setStatus('ok', 'Rewrite complete.');
+          break;
+
+        case 'suggest':
+          renderSuggestions(msg.candidates || []);
+          setStatus('ok', msg.candidates.length + ' suggestions ready.');
+          break;
+
+        case 'progress':
+          addLog('[' + msg.stage + '] ' + msg.status, 'idle');
+          break;
+
+        case 'error':
+          addLog('Error: ' + msg.message, 'err');
+          setStatus('err', msg.message);
+          break;
+
+        default:
+          break;
+      }
+    });
+
+    // -------------------------------------------------------------------------
+    // Rendering helpers
+    // -------------------------------------------------------------------------
+
+    function renderScore(score, band, features) {
+      scorePanelEl.classList.remove('hz-hidden');
+
+      const pct = Math.round(score * 100);
+      gaugeFillEl.style.width = pct + '%';
+      gaugeValueEl.textContent = score.toFixed(3);
+
+      const bandLower = (band || '').toLowerCase();
+      const bandUpper = bandLower.toUpperCase();
+      gaugeBandEl.textContent = bandUpper;
+      gaugeBandEl.className = 'hz-band hz-band--' + (bandLower === 'medium' ? 'med' : bandLower);
+
+      // Feature breakdown (top-3)
+      whyListEl.innerHTML = '';
+      const top3 = (features || [])
+        .slice()
+        .sort((a, b) => Math.abs(b.contribution) - Math.abs(a.contribution))
+        .slice(0, 3);
+
+      top3.forEach((f) => {
+        const li = document.createElement('li');
+        li.innerHTML =
+          '<span class="hz-why-name">' + escHtml(f.name) + '</span> ' +
+          '<span class="hz-why-detail">w=' + f.weight.toFixed(2) +
+          '  v=' + f.value.toFixed(3) +
+          '  contrib=' + f.contribution.toFixed(3) + '</span>';
+        whyListEl.appendChild(li);
+      });
+    }
+
+    function renderSuggestions(candidates) {
+      suggestPanelEl.classList.remove('hz-hidden');
+      suggestListEl.innerHTML = '';
+      _selectedCandidate = null;
+      suggestApplyEl.disabled = true;
+
+      candidates.forEach((c, i) => {
+        const card = document.createElement('div');
+        card.className = 'hz-suggest-card';
+        card.innerHTML =
+          '<div class="hz-suggest-head">' +
+            '<span>Candidate ' + (i + 1) + '</span>' +
+            '<span>AI: ' + c.score.toFixed(3) + '</span>' +
+          '</div>' +
+          '<div class="hz-suggest-text">' + escHtml(c.text) + '</div>';
+
+        card.addEventListener('click', () => {
+          document.querySelectorAll('.hz-suggest-card').forEach((el) => {
+            el.classList.remove('hz-suggest-card--active');
+          });
+          card.classList.add('hz-suggest-card--active');
+          _selectedCandidate = c.text;
+          suggestApplyEl.disabled = false;
+        });
+
+        suggestListEl.appendChild(card);
+      });
+    }
+
+    // -------------------------------------------------------------------------
+    // Status bar helper
+    // -------------------------------------------------------------------------
+
+    function setStatus(state, text) {
+      statusEl.className = 'hz-status hz-status--' + state;
+      statusTextEl.textContent = text;
+    }
+
+    // -------------------------------------------------------------------------
+    // Activity log
+    // -------------------------------------------------------------------------
+
+    function addLog(text, kind) {
+      const entry = document.createElement('div');
+      entry.className = 'hz-log-entry' + (kind ? ' hz-log-entry--' + kind : '');
+      entry.textContent = timestamp() + ' ' + text;
+      logEl.appendChild(entry);
+      // Keep only the last 80 lines to avoid memory growth.
+      while (logEl.children.length > 80) {
+        logEl.removeChild(logEl.firstChild);
+      }
+      logEl.scrollTop = logEl.scrollHeight;
+    }
+
+    function timestamp() {
+      return new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+    }
+
+    function escHtml(str) {
+      return String(str)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;');
+    }
+
+    // -------------------------------------------------------------------------
+    // v1.3 research panels
+    // -------------------------------------------------------------------------
+
+    function bindResearchPanel(buttonId, fetchType) {
+      const btn = el(buttonId);
+      if (btn) {
+        btn.addEventListener('click', () => {
+          vscode.postMessage({ type: fetchType });
+        });
+      }
+    }
+    bindResearchPanel('hz-outline-refresh', 'outline.fetch');
+    bindResearchPanel('hz-citations-refresh', 'citations.fetch');
+    bindResearchPanel('hz-readability-refresh', 'readability.fetch');
+
+    // Auto-fetch when a research panel is opened for the first time.
+    const researchPanels = [
+      { el: el('hz-outline-panel'),     fetchType: 'outline.fetch',    once: false },
+      { el: el('hz-citations-panel'),   fetchType: 'citations.fetch',  once: false },
+      { el: el('hz-readability-panel'), fetchType: 'readability.fetch', once: false },
+    ];
+    researchPanels.forEach((panel) => {
+      if (!panel.el) { return; }
+      panel.el.addEventListener('toggle', () => {
+        if (panel.el.open && !panel.once) {
+          panel.once = true;
+          vscode.postMessage({ type: panel.fetchType });
+        }
+      });
+    });
+
+    function renderOutline(headings) {
+      const list = el('hz-outline-list');
+      const empty = el('hz-outline-empty');
+      list.innerHTML = '';
+      if (!headings || headings.length === 0) {
+        empty.style.display = 'block';
+        return;
+      }
+      empty.style.display = 'none';
+      headings.forEach((h) => {
+        const li = document.createElement('li');
+        li.className = 'hz-outline-item hz-outline-item--l' + h.level;
+        li.innerHTML =
+          '<span class="hz-outline-title">' + escHtml(h.title) + '</span>' +
+          '<span class="hz-outline-words">' + h.wordCount + ' w</span>';
+        li.addEventListener('click', () => {
+          vscode.postMessage({ type: 'outline.reveal', lineStart: h.lineStart });
+        });
+        list.appendChild(li);
+      });
+    }
+
+    function renderCitations(missing, orphans, unused) {
+      const empty = el('hz-citations-empty');
+      const total = (missing || []).length + (orphans || []).length + (unused || []).length;
+      empty.style.display = total === 0 ? 'block' : 'none';
+      if (total === 0) {
+        empty.textContent = 'Clean — no findings.';
+      }
+      const m = el('hz-citations-missing');
+      const o = el('hz-citations-orphans');
+      const u = el('hz-citations-unused');
+      m.innerHTML = '';
+      o.innerHTML = '';
+      u.innerHTML = '';
+      (missing || []).forEach((entry) => {
+        const li = document.createElement('li');
+        li.textContent = entry.claim || '(missing claim)';
+        li.title = 'Click to reveal in editor';
+        li.addEventListener('click', () => {
+          vscode.postMessage({ type: 'citations.reveal', start: entry.start, end: entry.end });
+        });
+        m.appendChild(li);
+      });
+      (orphans || []).forEach((entry) => {
+        const li = document.createElement('li');
+        li.textContent = entry.key || '(orphan)';
+        li.addEventListener('click', () => {
+          vscode.postMessage({ type: 'citations.reveal', start: entry.start, end: entry.end });
+        });
+        o.appendChild(li);
+      });
+      (unused || []).forEach((entry) => {
+        const li = document.createElement('li');
+        li.textContent = entry.id + (entry.rawApa ? ' — ' + entry.rawApa.slice(0, 60) : '');
+        u.appendChild(li);
+      });
+    }
+
+    function renderReadability(metrics, targets) {
+      const tbody = el('hz-readability-table').getElementsByTagName('tbody')[0];
+      const empty = el('hz-readability-empty');
+      tbody.innerHTML = '';
+      if (!metrics) {
+        empty.style.display = 'block';
+        return;
+      }
+      empty.style.display = 'none';
+      const rows = [
+        ['Words',                 metrics.wordCount],
+        ['Sentences',             metrics.sentenceCount],
+        ['Mean sentence (words)', metrics.meanSentenceWords],
+        ['Sentence CV',           metrics.sentenceCv],
+        ['Flesch–Kincaid grade',  metrics.fleschKincaidGrade],
+        ['Gunning fog',           metrics.gunningFog],
+      ];
+      rows.forEach(([label, value]) => {
+        const tr = document.createElement('tr');
+        tr.innerHTML =
+          '<th>' + escHtml(label) + '</th><td>' + escHtml(String(value)) + '</td>';
+        tbody.appendChild(tr);
+      });
+      if (targets) {
+        const targetRows = [
+          ['Target FK ≤',  targets.fkGradeMax],
+          ['Target CV ≥',  targets.sentenceCvMin],
+          ['Target words', targets.wordsPerSection],
+        ];
+        targetRows.forEach(([label, t]) => {
+          if (!t || t.target === null || t.target === undefined) { return; }
+          const tr = document.createElement('tr');
+          const okMark = t.ok === true ? '✓' : (t.ok === false ? '✗' : '·');
+          tr.innerHTML =
+            '<th>' + escHtml(label) + ' ' + escHtml(String(t.target)) + '</th>' +
+            '<td>' + escHtml(String(t.actual ?? '?')) + ' ' + escHtml(okMark) + '</td>';
+          tbody.appendChild(tr);
+        });
+      }
+    }
+
+    // Extend message handler for v1.3 message types.
+    const _origMessageHandler = window.onmessage;  // safety reference
+    window.addEventListener('message', (event) => {
+      const msg = event.data || {};
+      switch (msg.type) {
+        case 'outline.data':
+          renderOutline(msg.headings || []);
+          break;
+        case 'citations.data':
+          renderCitations(msg.missing, msg.orphans, msg.unused);
+          break;
+        case 'citations.error':
+          renderCitations([], [], []);
+          el('hz-citations-empty').textContent = msg.message || 'Citation scan failed.';
+          el('hz-citations-empty').style.display = 'block';
+          break;
+        case 'readability.data':
+          renderReadability(msg.metrics, msg.targets);
+          break;
+        case 'readability.error':
+          renderReadability(null, null);
+          el('hz-readability-empty').textContent = msg.message || 'Readability fetch failed.';
+          el('hz-readability-empty').style.display = 'block';
+          break;
+        default:
+          break;
+      }
+    });
+
+    // -------------------------------------------------------------------------
+    // v1.4 — Welcome cards
+    // -------------------------------------------------------------------------
+    const welcomeEl = el('hz-welcome');
+    function showWelcome() {
+      if (welcomeEl) { welcomeEl.classList.remove('hz-hidden'); }
+    }
+    function hideWelcome() {
+      if (welcomeEl) { welcomeEl.classList.add('hz-hidden'); }
+    }
+    if (welcomeEl) {
+      welcomeEl.querySelectorAll('[data-action]').forEach((btn) => {
+        btn.addEventListener('click', () => {
+          const action = btn.getAttribute('data-action');
+          if (action === 'hz-welcome-score') {
+            vscode.postMessage({ type: 'score' });
+          } else if (action === 'hz-welcome-rewrite') {
+            vscode.postMessage({ type: 'transform', includeLlm: false });
+          } else if (action === 'hz-welcome-dashboard') {
+            vscode.postMessage({ type: 'openDashboard' });
+          } else if (action === 'hz-welcome-actions') {
+            vscode.postMessage({ type: 'openActions' });
+          }
+          hideWelcome();
+          vscode.postMessage({ type: 'welcome:dismissed' });
+        });
+      });
+      const dismissBtn = el('hz-welcome-dismiss');
+      if (dismissBtn) {
+        dismissBtn.addEventListener('click', () => {
+          hideWelcome();
+          vscode.postMessage({ type: 'welcome:dismissed' });
+        });
+      }
+    }
+
+    // -------------------------------------------------------------------------
+    // v1.4 — Backend-configured flag (controls "Send to {backend}" buttons)
+    // -------------------------------------------------------------------------
+    let _backendConfigured = false;
+    let _backendName = 'backend';
+    function _refreshBackendButtons() {
+      const label = 'Send to ' + _backendName;
+      document.querySelectorAll('.hz-prompt-send').forEach((b) => {
+        b.textContent = label;
+        if (_backendConfigured) {
+          b.classList.remove('hz-hidden');
+        } else {
+          b.classList.add('hz-hidden');
+        }
+      });
+    }
+
+    // -------------------------------------------------------------------------
+    // v1.4 — Prompt-output Copy / Send buttons (event delegation)
+    // -------------------------------------------------------------------------
+    document.addEventListener('click', (event) => {
+      const t = event.target;
+      if (!(t instanceof HTMLElement)) { return; }
+      if (t.classList.contains('hz-prompt-copy')) {
+        const targetId = t.getAttribute('data-target') || '';
+        const pre = el(targetId);
+        if (pre && pre.textContent) {
+          navigator.clipboard.writeText(pre.textContent).then(
+            () => addLog('Prompt copied to clipboard.', 'ok'),
+            (e) => addLog('Copy failed: ' + e, 'err')
+          );
+        }
+      } else if (t.classList.contains('hz-prompt-send')) {
+        const targetId = t.getAttribute('data-target') || '';
+        const pre = el(targetId);
+        if (pre && pre.textContent) {
+          vscode.postMessage({ type: 'llm:run', prompt: pre.textContent });
+          addLog('Prompt sent to ' + _backendName + '.', 'idle');
+        }
+      }
+    });
+
+    // -------------------------------------------------------------------------
+    // v1.4 — Study Starter
+    // -------------------------------------------------------------------------
+    const ssRunBtn = el('hz-ss-run');
+    if (ssRunBtn) {
+      ssRunBtn.addEventListener('click', () => {
+        const topic      = (el('hz-ss-topic')      || {}).value || '';
+        const discipline = (el('hz-ss-discipline') || {}).value || '';
+        const gap        = (el('hz-ss-gap')        || {}).value || '';
+        const audience   = (el('hz-ss-audience')   || {}).value || '';
+        const methods    = (el('hz-ss-methods')    || {}).value || '';
+        if (!topic.trim() || !discipline.trim()) {
+          addLog('Topic and discipline are required.', 'warn');
+          return;
+        }
+        vscode.postMessage({
+          type: 'studyStarter:run',
+          topic, discipline, gap, audience, methods,
+        });
+      });
+    }
+
+    // -------------------------------------------------------------------------
+    // v1.4 — Inspector
+    // -------------------------------------------------------------------------
+    const insRunBtn = el('hz-ins-run');
+    if (insRunBtn) {
+      insRunBtn.addEventListener('click', () => {
+        vscode.postMessage({ type: 'inspector:run' });
+      });
+    }
+
+    function renderInspectorFindings(findings, sectionTitle, sectionType) {
+      const meta = el('hz-ins-meta');
+      const list = el('hz-ins-findings');
+      if (meta) {
+        meta.textContent = sectionTitle ?
+          ('Section: ' + sectionTitle + ' (' + (sectionType || 'unknown') + ')') :
+          'No section.';
+      }
+      if (!list) { return; }
+      list.innerHTML = '';
+      if (!findings || findings.length === 0) {
+        const div = document.createElement('div');
+        div.className = 'hz-empty';
+        div.textContent = 'No issues detected.';
+        list.appendChild(div);
+        return;
+      }
+      findings.forEach((f, i) => {
+        const item = document.createElement('div');
+        item.className = 'hz-finding';
+        const promptId = 'hz-ins-finding-' + i;
+        item.innerHTML =
+          '<div class="hz-finding-name">' + escHtml(f.issue || f.name) + '</div>' +
+          '<div class="hz-finding-suggestion">' + escHtml(f.suggestion || '') + '</div>' +
+          '<div class="hz-prompt-output-wrap">' +
+            '<div class="hz-prompt-actions">' +
+              '<button class="hz-btn hz-btn--secondary hz-prompt-copy" data-target="' + promptId + '">Copy prompt</button>' +
+            '</div>' +
+            '<pre class="hz-prompt-output" id="' + promptId + '"></pre>' +
+          '</div>';
+        // Set the prompt content via textContent to avoid HTML injection.
+        list.appendChild(item);
+        const pre = item.querySelector('#' + promptId);
+        if (pre) { pre.textContent = f.prompt || ''; }
+      });
+    }
+
+    // -------------------------------------------------------------------------
+    // v1.4 — Templates library
+    // -------------------------------------------------------------------------
+    const tplOpenBtn = el('hz-tpl-open');
+    if (tplOpenBtn) {
+      tplOpenBtn.addEventListener('click', () => {
+        vscode.postMessage({ type: 'templates:open' });
+      });
+    }
+
+    // -------------------------------------------------------------------------
+    // v1.4 — Reviewer
+    // -------------------------------------------------------------------------
+    const revRunBtn = el('hz-rev-run');
+    if (revRunBtn) {
+      revRunBtn.addEventListener('click', () => {
+        const sel = el('hz-rev-persona');
+        const persona = (sel && sel.value === 'r2') ? 'r2' : 'r1';
+        vscode.postMessage({ type: 'reviewer:run', persona });
+      });
+    }
+
+    // -------------------------------------------------------------------------
+    // v1.4 — Generic prompt-output renderer
+    // -------------------------------------------------------------------------
+    function showPromptOutput(wrapId, preId, prompt) {
+      const wrap = el(wrapId);
+      const pre = el(preId);
+      if (!wrap || !pre) { return; }
+      pre.textContent = prompt || '';
+      wrap.classList.remove('hz-hidden');
+    }
+
+    // -------------------------------------------------------------------------
+    // v1.4 — Message handler additions
+    // -------------------------------------------------------------------------
+    window.addEventListener('message', (event) => {
+      const msg = event.data || {};
+      switch (msg.type) {
+        case 'config':
+          if (msg.settings) {
+            if (typeof msg.settings.backendConfigured === 'boolean') {
+              _backendConfigured = msg.settings.backendConfigured;
+            }
+            if (msg.settings.backend) { _backendName = msg.settings.backend; }
+            _refreshBackendButtons();
+          }
+          break;
+        case 'welcome:show':
+          showWelcome();
+          break;
+        case 'studyStarter:result':
+          showPromptOutput('hz-ss-output-wrap', 'hz-ss-output', msg.prompt);
+          addLog('Study Starter prompt ready (' + (msg.charCount || (msg.prompt||'').length) + ' chars).', 'ok');
+          break;
+        case 'studyStarter:error':
+          addLog('Study Starter: ' + msg.message, 'err');
+          break;
+        case 'inspector:result':
+          renderInspectorFindings(msg.findings, msg.sectionTitle, msg.sectionType);
+          addLog('Inspector found ' + (msg.findings || []).length + ' findings.', 'ok');
+          break;
+        case 'inspector:error':
+          renderInspectorFindings([], '', '');
+          addLog('Inspector: ' + msg.message, 'err');
+          break;
+        case 'templates:result':
+          showPromptOutput('hz-tpl-output-wrap', 'hz-tpl-output', msg.prompt);
+          {
+            const meta = el('hz-tpl-name');
+            if (meta) { meta.textContent = msg.templateName || msg.templateId || ''; }
+            const empty = el('hz-tpl-empty');
+            if (empty) { empty.classList.add('hz-hidden'); }
+          }
+          addLog('Template "' + (msg.templateName || msg.templateId) + '" rendered.', 'ok');
+          break;
+        case 'templates:error':
+          addLog('Templates: ' + msg.message, 'err');
+          break;
+        case 'reviewer:result':
+          showPromptOutput('hz-rev-output-wrap', 'hz-rev-output', msg.prompt);
+          addLog('Reviewer (' + msg.persona + ') prompt ready.', 'ok');
+          break;
+        case 'reviewer:error':
+          addLog('Reviewer: ' + msg.message, 'err');
+          break;
+        case 'llm:run:result':
+          if (msg.output) {
+            addLog('Backend reply (' + (msg.elapsedSeconds || 0).toFixed(1) + 's):\n' + msg.output, 'ok');
+          }
+          break;
+        case 'llm:run:error':
+          addLog('Backend send failed: ' + msg.message, 'err');
+          break;
+        default:
+          break;
+      }
+    });
+
+    // -------------------------------------------------------------------------
+    // Boot — tell the extension host we are ready so it sends config.
+    // -------------------------------------------------------------------------
+    vscode.postMessage({ type: 'ready' });
+    addLog('Sidebar loaded.', 'idle');
+  </script>
+</body>
+</html>

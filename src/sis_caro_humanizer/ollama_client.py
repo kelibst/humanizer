@@ -121,3 +121,69 @@ def generate(
             content = str(response)
 
     return (content or "").strip()
+
+
+def logprobs(
+    text: str,
+    *,
+    model: str,
+    host: str = DEFAULT_HOST,
+    timeout: float = 30.0,
+) -> list[float]:
+    """Return per-token natural-log probabilities for ``text`` under ``model``.
+
+    Used by the perplexity feature (v1.4). Tries Ollama's ``/api/generate``
+    with ``logprobs`` enabled; if the runtime / model does not surface them,
+    raises :class:`scoring.perplexity.LogprobsNotSupported` so the caller can
+    fall back to DistilGPT2.
+
+    Raises :class:`OllamaUnavailable` if the daemon itself is unreachable.
+    """
+    # Local import to avoid circular: scoring.perplexity imports ollama_client.
+    from .scoring.perplexity import LogprobsNotSupported
+
+    if not is_running(host):
+        raise OllamaUnavailable(f"ollama daemon not reachable at {host}")
+
+    payload = {
+        "model": model,
+        "prompt": text,
+        "raw": True,
+        "stream": False,
+        "options": {
+            "num_predict": 0,
+            # Newer Ollama exposes `logprobs` here; older versions ignore it.
+            "logprobs": True,
+        },
+    }
+    body = json.dumps(payload).encode("utf-8")
+    req = urllib.request.Request(
+        f"{host.rstrip('/')}/api/generate",
+        data=body,
+        headers={"Content-Type": "application/json"},
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
+    except (urllib.error.URLError, urllib.error.HTTPError, TimeoutError, OSError, ValueError) as exc:
+        raise OllamaUnavailable(f"ollama logprobs request failed: {exc}") from exc
+
+    # Walk a few likely shapes. Ollama's logprobs API is in flux across
+    # versions; tolerate any of (a) `logprobs` top-level list of floats,
+    # (b) `logprobs.token_logprobs`, (c) `tokens[].logprob` array.
+    raw = data.get("logprobs") if isinstance(data, dict) else None
+    if isinstance(raw, list) and raw and all(isinstance(x, (int, float)) for x in raw):
+        return [float(x) for x in raw]
+    if isinstance(raw, dict):
+        token_lp = raw.get("token_logprobs")
+        if isinstance(token_lp, list) and token_lp:
+            return [float(x) for x in token_lp if isinstance(x, (int, float))]
+    tokens = data.get("tokens") if isinstance(data, dict) else None
+    if isinstance(tokens, list) and tokens and isinstance(tokens[0], dict) and "logprob" in tokens[0]:
+        return [float(t["logprob"]) for t in tokens if isinstance(t.get("logprob"), (int, float))]
+
+    raise LogprobsNotSupported(
+        f"ollama at {host} returned no logprobs for model {model!r} — runtime "
+        "may be too old or the model does not expose them."
+    )

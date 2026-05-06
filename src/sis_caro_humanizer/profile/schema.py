@@ -77,6 +77,32 @@ class ParagraphShape(BaseModel):
     length_cv_min: float = Field(default=0.45, ge=0)
 
 
+class ProfileTargets(BaseModel):
+    """Optional research-aid targets (CONTRACT v1.3 §3.2).
+
+    All fields default to ``None`` so existing profiles load unchanged.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+    words_per_section: int | None = Field(default=None, ge=0)
+    fk_grade_max: float | None = Field(default=None, ge=0)
+    sentence_cv_min: float | None = Field(default=None, ge=0)
+
+
+class ResearchPrefs(BaseModel):
+    """Optional research-assistant preferences (CONTRACT v1.4 §6).
+
+    Used by the prompt-template engine to pre-fill discipline / audience /
+    methods so the user does not have to retype them on every form. All
+    fields default to ``None`` so existing profiles load unchanged.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+    discipline: str | None = None
+    audience: str | None = None
+    default_methods: str | None = None
+
+
 Dialect = Literal["ghanaian", "british", "american", "neutral"]
 Register = Literal["academic", "technical", "casual"]
 
@@ -126,6 +152,13 @@ class Profile(BaseModel):
         ]
     )
     risk_target: float = Field(default=0.35, ge=0, le=1)
+
+    # v1.3 — research-aid targets (optional; backwards-compatible).
+    targets: ProfileTargets = Field(default_factory=ProfileTargets)
+
+    # v1.4 — perplexity feature override + research-assistant prefs.
+    perplexity_model: str | None = None
+    research: ResearchPrefs = Field(default_factory=ResearchPrefs)
 
     @field_validator("profile_name")
     @classmethod

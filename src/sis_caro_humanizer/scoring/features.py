@@ -1,4 +1,4 @@
-"""Six pure feature functions for the AI-risk scorer.
+"""Seven pure feature functions for the AI-risk scorer.
 
 Each function takes raw text and returns a `FeatureContribution`. They are
 deliberately independent and side-effect-free; the aggregator in
@@ -6,6 +6,12 @@ deliberately independent and side-effect-free; the aggregator in
 
 See CONTRACTS.md § 3 for the formulas. All component values are clamped to
 [0, 1] before being returned.
+
+v1.4 — added a 7th feature ``perplexity`` and rebalanced weights so the seven
+sum to 1.0. The legacy weights (0.20 / 0.18 / 0.15 / 0.12 / 0.10 / 0.10) were
+intentionally lighter than 1.0 to leave headroom; that headroom is now
+redistributed plus rebalanced so perplexity carries 36 % of the score on
+LLM-favoured text. See plan/V1_4_CONTRACT.md §3.5.
 """
 from __future__ import annotations
 
@@ -109,7 +115,7 @@ def burstiness_deficit(text: str) -> FeatureContribution:
         return FeatureContribution(
             name="burstiness_deficit",
             value=0.0,
-            weight=0.18,
+            weight=0.14,
             detail="too few sentences to score",
             examples=[],
         )
@@ -118,7 +124,7 @@ def burstiness_deficit(text: str) -> FeatureContribution:
     return FeatureContribution(
         name="burstiness_deficit",
         value=value,
-        weight=0.18,
+        weight=0.14,
         detail=f"sentence-length CV = {cv:.2f} over {len(lens)} sentences",
         examples=[],
     )
@@ -149,7 +155,7 @@ def punct_signature(text: str) -> FeatureContribution:
     return FeatureContribution(
         name="punct_signature",
         value=value,
-        weight=0.15,
+        weight=0.10,
         detail=detail,
         examples=examples,
     )
@@ -168,7 +174,7 @@ def llm_vocab_density(text: str, favored: list[str] | None = None) -> FeatureCon
         return FeatureContribution(
             name="llm_vocab_density",
             value=0.0,
-            weight=0.20,
+            weight=0.16,
             detail="no llm_favored.txt loaded",
             examples=[],
         )
@@ -194,7 +200,7 @@ def llm_vocab_density(text: str, favored: list[str] | None = None) -> FeatureCon
     return FeatureContribution(
         name="llm_vocab_density",
         value=value,
-        weight=0.20,
+        weight=0.16,
         detail=f"{total} hits / {wc} words ({per_1k:.1f} per 1k)",
         examples=examples,
     )
@@ -218,7 +224,7 @@ def triple_list_rate(text: str) -> FeatureContribution:
     return FeatureContribution(
         name="triple_list_rate",
         value=value,
-        weight=0.12,
+        weight=0.08,
         detail=f"{n_triples} triple-lists in {n_sents} sentences ({per_100:.1f} per 100)",
         examples=examples,
     )
@@ -262,7 +268,7 @@ def topic_sentence_perfection(text: str) -> FeatureContribution:
         return FeatureContribution(
             name="topic_sentence_perfection",
             value=0.0,
-            weight=0.10,
+            weight=0.08,
             detail="no paragraphs",
             examples=[],
         )
@@ -282,7 +288,7 @@ def topic_sentence_perfection(text: str) -> FeatureContribution:
     return FeatureContribution(
         name="topic_sentence_perfection",
         value=value,
-        weight=0.10,
+        weight=0.08,
         detail=f"{perfect}/{n} paragraphs open with textbook topic sentences",
         examples=examples,
     )
@@ -308,14 +314,22 @@ def hedge_formality_skew(text: str) -> FeatureContribution:
     return FeatureContribution(
         name="hedge_formality_skew",
         value=value,
-        weight=0.10,
+        weight=0.08,
         detail=f"{formal} formal hedges, {informal} informal hedges (ratio={ratio:.2f})",
         examples=[],
     )
 
 
-def all_features(text: str) -> list[FeatureContribution]:
-    """Compute every feature in canonical order."""
+def all_features(text: str, profile: object | None = None) -> list[FeatureContribution]:
+    """Compute every feature in canonical order.
+
+    ``profile`` is forwarded to the perplexity feature so the user-configured
+    ``perplexity_model`` (v1.4 profile field) is honoured.
+    """
+    # Lazy import to avoid pulling perplexity (and lazily, transformers)
+    # into the import graph for callers that just want heuristic features.
+    from .perplexity import perplexity_feature
+
     return [
         burstiness_deficit(text),
         punct_signature(text),
@@ -323,6 +337,7 @@ def all_features(text: str) -> list[FeatureContribution]:
         triple_list_rate(text),
         topic_sentence_perfection(text),
         hedge_formality_skew(text),
+        perplexity_feature(text, profile),
     ]
 
 
