@@ -69,6 +69,7 @@ exports.importBibtex = importBibtex;
 exports.exportBibtex = exportBibtex;
 exports.batchStubOrphans = batchStubOrphans;
 exports.transformTextStream = transformTextStream;
+exports.reviewImport = reviewImport;
 exports.benchmark = benchmark;
 const vscode = __importStar(require("vscode"));
 // ---------------------------------------------------------------------------
@@ -724,6 +725,26 @@ async function transformTextStream(text, opts, onProgress, signal) {
     }
     // Stream ended without a `done` frame — treat as a network error.
     throw new DaemonError("SSE stream closed without a 'done' event.", 0, "Stream ended prematurely.");
+}
+// ---------------------------------------------------------------------------
+// v1.6 public API (CONTRACT §A2)
+// ---------------------------------------------------------------------------
+/**
+ * POST /v1/review-import — accept tracked changes from a lecturer-reviewed DOCX.
+ *
+ * @param docxBase64     Base64-encoded DOCX bytes.
+ * @param originalText   The original markdown text the DOCX was generated from.
+ * @param workspaceRoot  Optional absolute workspace path.
+ */
+async function reviewImport(docxBase64, originalText, workspaceRoot) {
+    const body = {
+        docx_b64: docxBase64,
+        original_text: originalText,
+    };
+    if (workspaceRoot) {
+        body.workspace_root = workspaceRoot;
+    }
+    return _post("/v1/review-import", body);
 }
 /**
  * POST /v1/benchmark — local breakdown + optional external detectors.

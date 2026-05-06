@@ -1113,6 +1113,58 @@ export async function transformTextStream(
   );
 }
 
+// ---------------------------------------------------------------------------
+// v1.6 result types (CONTRACT §A2)
+// ---------------------------------------------------------------------------
+
+export interface DiffSection {
+  original: string;
+  revised: string;
+  changed: boolean;
+  paragraph_idx: number;
+}
+
+export interface WordComment {
+  id: string;
+  author: string;
+  date: string;
+  text: string;
+  paragraph_idx: number;
+}
+
+export interface ReviewImportResult {
+  accepted_text: string;
+  diff_sections: DiffSection[];
+  comments: WordComment[];
+  post_score: { score: number; band: string };
+}
+
+// ---------------------------------------------------------------------------
+// v1.6 public API (CONTRACT §A2)
+// ---------------------------------------------------------------------------
+
+/**
+ * POST /v1/review-import — accept tracked changes from a lecturer-reviewed DOCX.
+ *
+ * @param docxBase64     Base64-encoded DOCX bytes.
+ * @param originalText   The original markdown text the DOCX was generated from.
+ * @param workspaceRoot  Optional absolute workspace path.
+ */
+export async function reviewImport(
+  docxBase64: string,
+  originalText: string,
+  workspaceRoot?: string
+): Promise<ReviewImportResult> {
+  const body: Record<string, unknown> = {
+    docx_b64: docxBase64,
+    original_text: originalText,
+  };
+  if (workspaceRoot) {
+    body.workspace_root = workspaceRoot;
+  }
+  return _post<ReviewImportResult>("/v1/review-import", body);
+}
+
 /**
  * POST /v1/benchmark — local breakdown + optional external detectors.
  *

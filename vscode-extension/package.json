@@ -116,6 +116,11 @@
         "command": "humanizer.resolveAllOrphans",
         "title": "Resolve All Orphan Citations",
         "category": "Humanizer"
+      },
+      {
+        "command": "humanizer.importReview",
+        "title": "Import Lecturer Review",
+        "category": "Humanizer"
       }
     ],
     "keybindings": [

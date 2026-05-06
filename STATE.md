@@ -943,3 +943,81 @@ webview assets, resources, package.json, manifests.
 - **Decoration scoring can timeout** if the daemon is slow and there are many paragraphs.
   A per-paragraph timeout or a maximum-paragraph-count cap would improve robustness
   in v1.1.
+
+---
+
+## What is done (Agent A v1.6 Track A, 2026-05-06)
+
+Lecturer review round-trip + one-command extension install shipped per
+`/home/kelib/.claude/plans/you-are-going-to-dreamy-nebula.md` Track A.
+
+### A1 — One-command extension install script
+- `vscode-extension/scripts/install.sh` (new, chmod +x) — compile, vsce package,
+  uninstall old, install new, print reload reminder.
+- `Makefile` at repo root (new) — `make extension` target invokes the script.
+- `CLAUDE.md` — one paragraph added under "How to Run (Development)" explaining
+  `make extension`.
+
+### A2.1 — Three new functions in `docx_bridge.py`
+- `accept_tracked_changes(path)` — walks raw OOXML; includes `w:ins` text,
+  skips `w:del` text, includes normal run text; joins paragraphs with `\n\n`.
+- `extract_word_comments(path)` — accesses the comments part via the relationship
+  table; returns `[{id, author, date, text, paragraph_idx}]`; returns `[]` when
+  no comments part exists.
+- `diff_text_sections(original, revised)` — `difflib.SequenceMatcher` on
+  paragraph lists; returns `[{original, revised, changed, paragraph_idx}]`.
+- `__all__` updated to export all five public names.
+
+### A2.2 — New endpoint `POST /v1/review-import` in `serve/app.py`
+- `ReviewImportBody` Pydantic model added near the v1.5 bodies section.
+- Route handler: base64 decode → temp file → `accept_tracked_changes` →
+  `extract_word_comments` → `diff_text_sections` → `ai_risk_score` → cleanup.
+- `ImportError` from `docx_bridge` returns 503; DOCX parse errors return 400.
+
+### A2.3 — New CLI subcommand `humanize review-import`
+- Added to `cli.py` as `@app.command("review-import")`.
+- Arguments: `reviewed_docx` (positional), `--original`, `--profile`.
+- Rich output: accepted text preview panel, diff table, comments panel,
+  post-import score band line.
+- Offers to re-humanize changed sections; calls `run_pipeline` per paragraph
+  if confirmed.
+
+### A2.4 — VS Code command `humanizer.importReview`
+- `daemonClient.ts` — added `ReviewImportResult`, `DiffSection`, `WordComment`
+  interfaces and `reviewImport()` function (POST `/v1/review-import`).
+- `sectionProcessor.ts` — added `import * as fs from "fs"`, imported
+  `reviewImport` from `daemonClient`, registered `humanizer.importReview`
+  command in `registerSectionCommands()`. Command: file picker → base64 DOCX
+  → POST daemon → output channel with changed sections + comments + post-score.
+- `package.json` — added `humanizer.importReview` / "Import Lecturer Review"
+  to the `commands` array.
+- `npm run compile` → 0 TypeScript errors.
+
+### Tests
+- `tests/test_docx_bridge.py` — 4 new tests:
+  `test_accept_tracked_changes_includes_insertions`,
+  `test_accept_tracked_changes_excludes_deletions`,
+  `test_extract_word_comments_returns_list`,
+  `test_diff_text_sections_marks_changed`.
+- `tests/test_serve_v1_6.py` (new file) — 3 tests:
+  `test_review_import_requires_auth`,
+  `test_review_import_returns_diff`,
+  `test_review_import_no_docx_dep_503`.
+
+### Test count
+`.venv/bin/python -m pytest tests/ -q` → **315 passed, 3 skipped, 1 warning**
+(was 308 before this round; +7 Python tests).
+
+### Files touched
+- `vscode-extension/scripts/install.sh` (new)
+- `Makefile` (new)
+- `CLAUDE.md` (added `make extension` note)
+- `src/sis_caro_humanizer/docx_bridge.py` (three functions added)
+- `src/sis_caro_humanizer/serve/app.py` (`ReviewImportBody` + `/v1/review-import`)
+- `src/sis_caro_humanizer/cli.py` (`review-import` subcommand + `Optional` import)
+- `vscode-extension/src/daemonClient.ts` (types + `reviewImport()`)
+- `vscode-extension/src/sectionProcessor.ts` (`fs` import + `importReview` command)
+- `vscode-extension/package.json` (command entry)
+- `tests/test_docx_bridge.py` (4 new tests)
+- `tests/test_serve_v1_6.py` (new file, 3 tests)
+- `STATE.md` (this section)

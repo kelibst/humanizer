@@ -18,10 +18,12 @@
 
 import * as vscode from "vscode";
 import * as path from "path";
+import * as fs from "fs";
 import { execFile } from "child_process";
 import {
   scoreText,
   transformTextStream,
+  reviewImport,
   StreamStageEvent,
   DaemonError,
 } from "./daemonClient";
@@ -729,6 +731,92 @@ export function registerSectionCommands(
       async () => {
         // Focus the section tree view (CONTRACT §showProgress logic)
         await vscode.commands.executeCommand("humanizer.sections.focus");
+      }
+    )
+  );
+
+  // ---- humanizer.importReview ----
+  ctx.subscriptions.push(
+    vscode.commands.registerCommand(
+      "humanizer.importReview",
+      async () => {
+        // Step 1: pick a .docx file
+        const uris = await vscode.window.showOpenDialog({
+          canSelectMany: false,
+          filters: { "Word Documents": ["docx"] },
+          openLabel: "Select Reviewed DOCX",
+        });
+        if (!uris || uris.length === 0) {
+          return;
+        }
+        const docxUri = uris[0];
+
+        // Step 2: get the active editor's text as the original
+        const editor = getLastMarkdownEditor() ?? vscode.window.activeTextEditor;
+        const originalText = editor ? editor.document.getText() : "";
+
+        // Step 3: read DOCX and base64-encode it
+        let docxBase64: string;
+        try {
+          const docxBytes = fs.readFileSync(docxUri.fsPath);
+          docxBase64 = docxBytes.toString("base64");
+        } catch (err: unknown) {
+          vscode.window.showErrorMessage(
+            `Humanizer: Could not read DOCX file — ${String(err)}`
+          );
+          return;
+        }
+
+        // Step 4: call the daemon
+        let result;
+        try {
+          result = await reviewImport(docxBase64, originalText);
+        } catch (err: unknown) {
+          _showError(err);
+          return;
+        }
+
+        // Step 5: show results in an output channel
+        const channel = vscode.window.createOutputChannel("Humanizer: Review Import");
+        channel.clear();
+
+        const changedCount = result.diff_sections.filter((s) => s.changed).length;
+        channel.appendLine(`=== Lecturer Review Import ===`);
+        channel.appendLine(
+          `Changed sections: ${changedCount} / ${result.diff_sections.length}`
+        );
+        channel.appendLine(
+          `Post-import score: ${result.post_score.score.toFixed(2)} (${result.post_score.band.toUpperCase()})`
+        );
+
+        if (result.comments.length > 0) {
+          channel.appendLine("\n--- Comments ---");
+          for (const c of result.comments) {
+            channel.appendLine(`  [Para ${c.paragraph_idx}] ${c.author}: ${c.text}`);
+          }
+        } else {
+          channel.appendLine("\nNo reviewer comments.");
+        }
+
+        if (changedCount > 0) {
+          channel.appendLine("\n--- Changed Sections ---");
+          for (const sec of result.diff_sections.filter((s) => s.changed)) {
+            channel.appendLine(`  [Para ${sec.paragraph_idx}]`);
+            channel.appendLine(
+              `    Original: ${sec.original.slice(0, 80).replace(/\n/g, " ")}…`
+            );
+            channel.appendLine(
+              `    Revised:  ${sec.revised.slice(0, 80).replace(/\n/g, " ")}…`
+            );
+          }
+        }
+
+        channel.show(true);
+        vscode.window.showInformationMessage(
+          `Humanizer: Review import done — ${changedCount} changed section(s), ` +
+            `score ${result.post_score.score.toFixed(2)} (${result.post_score.band.toUpperCase()}). ` +
+            `See "Humanizer: Review Import" output panel.`
+        );
       }
     )
   );
