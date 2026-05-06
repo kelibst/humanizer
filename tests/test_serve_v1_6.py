@@ -87,6 +87,57 @@ def test_review_import_returns_diff(client: TestClient) -> None:
     assert body["post_score"]["band"] in ("low", "medium", "high")
 
 
+# ---------------------------------------------------------------------------
+# /v1/citations/google-docs
+# ---------------------------------------------------------------------------
+
+
+def test_google_docs_citations_returns_paragraph_coords(client: TestClient) -> None:
+    """POST paragraphs with an orphan citation; response must include
+    paragraph_idx and char_in_paragraph on each orphan entry."""
+    # Paragraph 0 has an orphan citation; paragraph 1 is unrelated prose.
+    paragraphs = [
+        "Studies show the trend (Smith, 2020).",
+        "This paragraph has no citation at all.",
+    ]
+    r = client.post(
+        "/v1/citations/google-docs",
+        json={"paragraphs": paragraphs},
+        headers=HDRS,
+    )
+    assert r.status_code == 200, r.text
+    body = r.json()
+
+    assert "orphans" in body
+    assert "missing" in body
+    assert "unused" in body
+
+    # There should be at least one orphan (Smith, 2020) with no refs provided.
+    assert len(body["orphans"]) >= 1
+    orphan = body["orphans"][0]
+    # Must include paragraph coordinates.
+    assert "paragraph_idx" in orphan, "orphan missing paragraph_idx"
+    assert "char_in_paragraph" in orphan, "orphan missing char_in_paragraph"
+    # The orphan lives in paragraph 0.
+    assert orphan["paragraph_idx"] == 0
+    # char_in_paragraph must be within the first paragraph's length.
+    assert 0 <= orphan["char_in_paragraph"] < len(paragraphs[0])
+
+
+def test_google_docs_citations_empty_paragraphs(client: TestClient) -> None:
+    """POST an empty paragraph list; endpoint must return empty lists."""
+    r = client.post(
+        "/v1/citations/google-docs",
+        json={"paragraphs": []},
+        headers=HDRS,
+    )
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["orphans"] == []
+    assert body["missing"] == []
+    assert body["unused"] == []
+
+
 def test_review_import_no_docx_dep_503(client: TestClient) -> None:
     """If python-docx is unavailable (ImportError), the endpoint returns 503."""
     import sys

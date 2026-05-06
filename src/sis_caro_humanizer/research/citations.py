@@ -363,10 +363,55 @@ def _structural_protected_spans(text: str) -> list[tuple[int, int]]:
     return _merge(spans)
 
 
+def flat_to_paragraph_offset(paragraphs: list[str], flat_offset: int) -> tuple[int, int]:
+    """Convert a character offset in the flat joined text to paragraph coordinates.
+
+    The flat text is ``'\\n\\n'.join(paragraphs)``.  Each paragraph is
+    separated from the next by exactly two characters (``\\n\\n``).
+
+    Parameters
+    ----------
+    paragraphs:
+        The list of paragraph strings (as returned by ``DocumentApp.getParagraphs()``
+        in the Google Apps Script add-in or split by any means).
+    flat_offset:
+        Character offset in the joined flat text.
+
+    Returns
+    -------
+    ``(paragraph_idx, char_within_paragraph)`` where *paragraph_idx* is the
+    0-based index of the paragraph and *char_within_paragraph* is the offset
+    from the start of that paragraph.  Returns ``(-1, -1)`` when *flat_offset*
+    is out of range (negative or beyond the flat text length).
+    """
+    if flat_offset < 0:
+        return (-1, -1)
+
+    # Separator between consecutive paragraphs is '\n\n' (2 chars).
+    SEP = 2
+    pos = 0
+    for idx, para in enumerate(paragraphs):
+        para_end = pos + len(para)
+        # flat_offset is within [pos, para_end) — i.e., inside this paragraph.
+        # We also accept flat_offset == para_end for the last paragraph so that
+        # spans that end at the very last character are covered.
+        if idx == len(paragraphs) - 1:
+            if pos <= flat_offset <= para_end:
+                return (idx, flat_offset - pos)
+        else:
+            if pos <= flat_offset < para_end:
+                return (idx, flat_offset - pos)
+        # Advance past the paragraph text and the separator.
+        pos = para_end + SEP
+
+    return (-1, -1)
+
+
 __all__ = [
     "CitationsReport",
     "MissingCitation",
     "OrphanCitation",
     "UnusedReference",
     "analyse_citations",
+    "flat_to_paragraph_offset",
 ]

@@ -1021,3 +1021,79 @@ Lecturer review round-trip + one-command extension install shipped per
 - `tests/test_docx_bridge.py` (4 new tests)
 - `tests/test_serve_v1_6.py` (new file, 3 tests)
 - `STATE.md` (this section)
+
+---
+
+## What is done (Agent B v1.6 Track B, 2026-05-06)
+
+Track B complete.  Six new tests added; full suite advances from 315 → 321
+passed (3 skipped, 1 warning — unchanged from baseline).
+
+### B1 — DOCX Export with Citation Hyperlinks
+
+Extended `src/sis_caro_humanizer/docx_bridge.py`:
+
+- Module-level constants: `_APA_LINE_RE`, `_APA_KEY_RE`, `_CITE_PAREN_RE`.
+- `_make_bookmark_id(line, existing)` — derives `ref_lastname_year` with
+  `_a/_b/...` suffix collision handling.
+- `_inject_bookmark(paragraph, bookmark_id, counter)` — inserts
+  `w:bookmarkStart` / `w:bookmarkEnd` wrapping the paragraph's runs using
+  `OxmlElement`; uses an incrementing integer counter starting at 1000 to
+  avoid conflicts with existing document bookmarks.
+- `_build_reference_bookmarks(doc, humanized_text)` — scans the
+  `## References` section of `humanized_text`, matches lines to DOCX
+  paragraphs, calls `_inject_bookmark` for each match, returns the
+  bookmark map.
+- `_cite_anchor(cite_key, cite_year)` — normalises a citation key string
+  to `ref_lastname_year`.
+- `_add_internal_hyperlink(paragraph, anchor, match_text)` — destructive
+  paragraph rebuild: clears runs, re-adds prefix text + `w:hyperlink` +
+  suffix text.  Preserves `w:rPr` font properties from the original first
+  run.  Handles leading/trailing spaces via `xml:space="preserve"`.
+- `_embed_citation_hyperlinks(doc, bookmark_map)` — scans non-reference
+  paragraphs for `_CITE_PAREN_RE` matches and calls
+  `_add_internal_hyperlink` for each resolved anchor.
+- `write_docx` extended: heading-only paragraphs (lines starting with `#`)
+  are now skipped during the text-replacement pass so markdown headings
+  (e.g. `## References`) do not consume a DOCX paragraph slot and displace
+  the reference content.  Pass 2 (bookmarks) and Pass 3 (hyperlinks) run
+  after the replacement pass.
+
+### B2 — Google Docs Endpoint `POST /v1/citations/google-docs`
+
+- `flat_to_paragraph_offset(paragraphs, flat_offset)` added to
+  `src/sis_caro_humanizer/research/citations.py`.  Walks paragraph list
+  with `\n\n` (2-char) separator; returns `(idx, char)` or `(-1, -1)` for
+  out-of-range offsets.  Exported via `__all__`.
+- `GoogleDocsCitationsBody` Pydantic model added to
+  `src/sis_caro_humanizer/serve/app.py` (near other v1.5 bodies).
+- `POST /v1/citations/google-docs` route added inside `create_app()` just
+  before `/v1/refs`.  Joins paragraphs with `\n\n`, loads optional refs and
+  profile, calls `analyse_citations`, converts flat offsets to paragraph
+  coordinates, returns `{missing, orphans, unused}` with `paragraph_idx`
+  and `char_in_paragraph` on each span-bearing item.
+
+### B3 — Google Apps Script Stub
+
+- `src/sis_caro_humanizer/serve/google_docs_addon/Code.gs` (new) —
+  complete Apps Script that reads paragraphs, POSTs to
+  `/v1/citations/google-docs`, highlights orphan citations red via
+  `editAsText().setForegroundColor()`, and shows a sidebar summary.
+- `src/sis_caro_humanizer/serve/google_docs_addon/README.md` (new) —
+  step-by-step install guide (Extensions → Apps Script → paste → Script
+  Properties), usage guide, endpoint description.
+
+### Tests added
+
+- `tests/test_docx_bridge.py`:
+  - `test_write_docx_adds_reference_bookmarks`
+  - `test_write_docx_embeds_citation_hyperlinks`
+- `tests/test_serve_v1_6.py` (appended to Agent A's file):
+  - `test_google_docs_citations_returns_paragraph_coords`
+  - `test_google_docs_citations_empty_paragraphs`
+- `tests/test_research_citations.py` (appended):
+  - `test_flat_to_paragraph_offset_basic`
+  - `test_flat_to_paragraph_offset_out_of_range`
+
+### Test status
+`.venv/bin/python -m pytest tests/ -q` → **321 passed, 3 skipped** (was 315 passed).

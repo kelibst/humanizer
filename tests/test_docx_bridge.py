@@ -186,3 +186,76 @@ def test_diff_text_sections_marks_changed() -> None:
     # First and third paragraphs are unchanged.
     assert any("First paragraph." in s["original"] for s in unchanged)
     assert any("Third paragraph." in s["original"] for s in unchanged)
+
+
+# ---------------------------------------------------------------------------
+# B1 — write_docx with citation bookmarks and hyperlinks
+# ---------------------------------------------------------------------------
+
+
+def test_write_docx_adds_reference_bookmarks(tmp_path: Path) -> None:
+    """write_docx should inject a w:bookmarkStart with the correct w:name on
+    the paragraph that matches the reference entry."""
+    # Build an original DOCX with a matching reference paragraph.
+    doc = Document()
+    doc.add_paragraph("Body text with a citation (Smith, 2020).")
+    doc.add_paragraph("Smith, J. (2020). A sample paper. Journal of Tests, 1(1), 1-5.")
+    original = tmp_path / "orig.docx"
+    doc.save(str(original))
+
+    humanized_text = (
+        "Body text with a citation (Smith, 2020).\n\n"
+        "## References\n\n"
+        "Smith, J. (2020). A sample paper. Journal of Tests, 1(1), 1-5."
+    )
+    out_path = tmp_path / "out.docx"
+    write_docx(original, humanized_text, out_path)
+
+    result_doc = Document(str(out_path))
+    # Find a paragraph whose XML contains a bookmarkStart with the expected name.
+    found_bookmark = False
+    for para in result_doc.paragraphs:
+        for bm in para._element.findall(qn("w:bookmarkStart")):
+            if bm.get(qn("w:name")) == "ref_smith_2020":
+                found_bookmark = True
+                break
+        if found_bookmark:
+            break
+
+    assert found_bookmark, (
+        "Expected a w:bookmarkStart with w:name='ref_smith_2020' in the output DOCX"
+    )
+
+
+def test_write_docx_embeds_citation_hyperlinks(tmp_path: Path) -> None:
+    """write_docx should convert (Smith, 2020) in prose into a w:hyperlink
+    element pointing at ref_smith_2020 when a matching reference bookmark
+    exists."""
+    doc = Document()
+    doc.add_paragraph("Body text with a citation (Smith, 2020).")
+    doc.add_paragraph("Smith, J. (2020). A sample paper. Journal of Tests, 1(1), 1-5.")
+    original = tmp_path / "orig.docx"
+    doc.save(str(original))
+
+    humanized_text = (
+        "Body text with a citation (Smith, 2020).\n\n"
+        "## References\n\n"
+        "Smith, J. (2020). A sample paper. Journal of Tests, 1(1), 1-5."
+    )
+    out_path = tmp_path / "out.docx"
+    write_docx(original, humanized_text, out_path)
+
+    result_doc = Document(str(out_path))
+    # Find a paragraph whose XML contains a w:hyperlink with w:anchor=ref_smith_2020.
+    found_hyperlink = False
+    for para in result_doc.paragraphs:
+        for hl in para._element.findall(qn("w:hyperlink")):
+            if hl.get(qn("w:anchor")) == "ref_smith_2020":
+                found_hyperlink = True
+                break
+        if found_hyperlink:
+            break
+
+    assert found_hyperlink, (
+        "Expected a w:hyperlink with w:anchor='ref_smith_2020' in the output DOCX"
+    )

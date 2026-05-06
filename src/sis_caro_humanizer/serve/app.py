@@ -293,6 +293,18 @@ class BatchStubBody(BaseModel):
 
 
 # ---------------------------------------------------------------------------
+# v1.6 request bodies (CONTRACT v1.6 §B2)
+# ---------------------------------------------------------------------------
+
+
+class GoogleDocsCitationsBody(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    paragraphs: list[str]
+    workspace_root: str | None = None
+    profile: str | None = None
+
+
+# ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
 
@@ -592,6 +604,55 @@ def create_app(
             "missing": [_to_jsonable(m) for m in report.missing],
             "orphans": [_to_jsonable(o) for o in report.orphans],
             "unused": [_to_jsonable(u) for u in report.unused],
+        }
+
+    @app.post("/v1/citations/google-docs")
+    async def citations_google_docs(
+        body: GoogleDocsCitationsBody, _: None = auth_dep
+    ) -> dict[str, Any]:
+        """Return citation findings with paragraph-indexed coordinates for Google Docs.
+
+        The caller passes the document as a list of paragraph strings (matching
+        ``DocumentApp.getBody().getParagraphs()``).  The response extends the
+        flat character-offset data from ``/v1/citations`` with
+        ``paragraph_idx`` and ``char_in_paragraph`` fields so the Apps Script
+        add-in can highlight text without calling ``positionAt()``.
+        """
+        from ..research.citations import flat_to_paragraph_offset
+
+        prof = _safe_resolve_profile(body.profile)
+        flat_text = "\n\n".join(body.paragraphs)
+
+        if body.workspace_root:
+            try:
+                refs = load_refs(body.workspace_root)
+            except OSError as exc:
+                raise HTTPException(
+                    status_code=400,
+                    detail={"error": "invalid_input", "detail": str(exc)},
+                ) from exc
+        else:
+            refs = []
+
+        report = analyse_citations(flat_text, refs, prof)
+
+        def _with_coords(items: list[Any], has_span: bool = True) -> list[dict[str, Any]]:
+            out = []
+            for item in items:
+                d = _to_jsonable(item)
+                if has_span:
+                    p_idx, c_idx = flat_to_paragraph_offset(
+                        body.paragraphs, item.start
+                    )
+                    d["paragraph_idx"] = p_idx
+                    d["char_in_paragraph"] = c_idx
+                out.append(d)
+            return out
+
+        return {
+            "missing": _with_coords(report.missing),
+            "orphans": _with_coords(report.orphans),
+            "unused": _with_coords(report.unused, has_span=False),
         }
 
     @app.get("/v1/refs")
