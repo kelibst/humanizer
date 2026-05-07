@@ -162,6 +162,14 @@ async function _replaceSectionText(editor, node, newText) {
 // appropriate decoration. Called after score/transform commands and on save.
 // NOT called on every document change event.
 // ---------------------------------------------------------------------------
+/** Split an array into chunks of at most `n` elements. */
+function _chunk(arr, n) {
+    const out = [];
+    for (let i = 0; i < arr.length; i += n) {
+        out.push(arr.slice(i, i + n));
+    }
+    return out;
+}
 async function _applyDecorations(editor) {
     if (editor.document.languageId !== "markdown") {
         return;
@@ -174,8 +182,12 @@ async function _applyDecorations(editor) {
     const medRanges = [];
     // Score paragraphs > 30 words concurrently but cap to avoid hammering daemon
     const eligible = paragraphs.filter((p) => p.wordCount > 30);
-    // Run scoring in parallel (all eligible paragraphs at once)
-    const scoreResults = await Promise.allSettled(eligible.map((p) => (0, daemonClient_1.scoreText)(p.text, cfg.profile)));
+    // Run scoring in batches of 4 to avoid saturating the daemon's thread pool
+    const scoreResults = [];
+    for (const batch of _chunk(eligible, 4)) {
+        const batchResults = await Promise.allSettled(batch.map((p) => (0, daemonClient_1.scoreText)(p.text, cfg.profile)));
+        scoreResults.push(...batchResults);
+    }
     for (let i = 0; i < eligible.length; i++) {
         const result = scoreResults[i];
         if (result.status !== "fulfilled") {

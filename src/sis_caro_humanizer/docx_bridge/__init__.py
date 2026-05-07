@@ -26,7 +26,6 @@ from ._diff import diff_text_sections
 
 # Private helpers re-exported for tests (preserved from the original module).
 from ._bookmarks import _make_bookmark_id, _inject_bookmark
-from ._hyperlinks import _add_internal_hyperlink
 
 __all__ = [
     "extract_text",
@@ -39,5 +38,4 @@ __all__ = [
     "_require_docx",
     "_make_bookmark_id",
     "_inject_bookmark",
-    "_add_internal_hyperlink",
 ]

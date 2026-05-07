@@ -50,15 +50,16 @@ const activeEditorTracker_1 = require("./activeEditorTracker");
 class SidebarProvider {
     /**
      * Register a research-surface message handler. Returns a Disposable that
-     * clears the hook on disposal — ``research/index.ts`` pushes it into the
+     * removes the handler on disposal — ``research/index.ts`` pushes it into the
      * extension subscriptions so VS Code clears the chain on deactivation.
      */
     static researchHandlerHook(handler) {
-        SidebarProvider._researchHandler = handler;
+        SidebarProvider._researchHandlers.push(handler);
         return {
             dispose: () => {
-                if (SidebarProvider._researchHandler === handler) {
-                    SidebarProvider._researchHandler = undefined;
+                const idx = SidebarProvider._researchHandlers.indexOf(handler);
+                if (idx !== -1) {
+                    SidebarProvider._researchHandlers.splice(idx, 1);
                 }
             },
         };
@@ -74,10 +75,9 @@ class SidebarProvider {
         };
         webviewView.webview.html = this._buildHtml(webviewView.webview);
         webviewView.webview.onDidReceiveMessage(async (msg) => {
-            // Give the v1.3 research handler first crack at the message. Anything
-            // it claims (returns true) is suppressed from the default routing.
-            const hook = SidebarProvider._researchHandler;
-            if (hook) {
+            // Give the v1.3 research handler chain first crack at the message. Walk
+            // the chain and stop at the first handler returning true (claimed).
+            for (const hook of SidebarProvider._researchHandlers) {
                 try {
                     const claimed = await hook(msg, webviewView.webview);
                     if (claimed) {
@@ -346,6 +346,10 @@ class SidebarProvider {
 }
 exports.SidebarProvider = SidebarProvider;
 SidebarProvider.VIEW_ID = "humanizer.sidebar";
+// v1.3 research-surface hook chain (populated via ``researchHandlerHook``).
+// Static so ``research/index.ts`` can register handlers before any webview
+// view is resolved without holding a reference to the provider instance.
+SidebarProvider._researchHandlers = [];
 // ---------------------------------------------------------------------------
 // Internal helpers
 // ---------------------------------------------------------------------------

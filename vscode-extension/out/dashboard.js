@@ -51,6 +51,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.openDashboard = openDashboard;
 const vscode = __importStar(require("vscode"));
 const daemonClient_1 = require("./daemonClient");
+const activeEditorTracker_1 = require("./activeEditorTracker");
 const HISTORY_KEY = "humanizer.scoreHistory";
 const HISTORY_CAP = 30;
 let _panel;
@@ -89,7 +90,7 @@ async function _kickRefresh() {
         return;
     }
     const ctx = _ctx;
-    const editor = vscode.window.activeTextEditor;
+    const editor = (0, activeEditorTracker_1.getLastMarkdownEditor)() ?? vscode.window.activeTextEditor;
     if (!editor || editor.document.languageId !== "markdown") {
         _panel.webview.postMessage({
             type: "data",

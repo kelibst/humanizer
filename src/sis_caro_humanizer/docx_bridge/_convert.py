@@ -5,7 +5,7 @@ import re
 from pathlib import Path
 
 from ._guard import _require_docx
-from ._bookmarks import _build_reference_bookmarks
+from ._bookmarks import _build_reference_bookmarks, clean_citation_markup
 from ._hyperlinks import _embed_citation_hyperlinks
 
 
@@ -35,6 +35,8 @@ def new_docx_from_markdown(humanized_text: str, output_path: Path) -> None:
     """
     Document = _require_docx()
     doc = Document()
+
+    humanized_text = clean_citation_markup(humanized_text)
 
     for block in humanized_text.split("\n\n"):
         block = block.strip()

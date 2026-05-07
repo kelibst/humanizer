@@ -174,6 +174,13 @@ async function _replaceSectionText(
 // NOT called on every document change event.
 // ---------------------------------------------------------------------------
 
+/** Split an array into chunks of at most `n` elements. */
+function _chunk<T>(arr: T[], n: number): T[][] {
+  const out: T[][] = [];
+  for (let i = 0; i < arr.length; i += n) { out.push(arr.slice(i, i + n)); }
+  return out;
+}
+
 async function _applyDecorations(editor: vscode.TextEditor): Promise<void> {
   if (editor.document.languageId !== "markdown") {
     return;
@@ -193,10 +200,14 @@ async function _applyDecorations(editor: vscode.TextEditor): Promise<void> {
     (p) => p.wordCount > 30
   );
 
-  // Run scoring in parallel (all eligible paragraphs at once)
-  const scoreResults = await Promise.allSettled(
-    eligible.map((p) => scoreText(p.text, cfg.profile))
-  );
+  // Run scoring in batches of 4 to avoid saturating the daemon's thread pool
+  const scoreResults: PromiseSettledResult<Awaited<ReturnType<typeof scoreText>>>[] = [];
+  for (const batch of _chunk(eligible, 4)) {
+    const batchResults = await Promise.allSettled(
+      batch.map((p) => scoreText(p.text, cfg.profile))
+    );
+    scoreResults.push(...batchResults);
+  }
 
   for (let i = 0; i < eligible.length; i++) {
     const result = scoreResults[i];

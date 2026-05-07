@@ -27,6 +27,36 @@ _CITE_PAREN_RE = re.compile(
 )
 
 
+# ---------------------------------------------------------------------------
+# Markup-stripping pre-processor
+# ---------------------------------------------------------------------------
+
+# refs_store generates references with HTML anchor IDs, e.g.:
+#   <a id="ref-smith2020"></a>Smith, J. (2020). …
+_HTML_ANCHOR_RE = re.compile(r'<a\s+id="[^"]*"\s*></a>\s*')
+
+# refs_store formats in-text citations as markdown links, e.g.:
+#   Single:  ([Smith, 2020](#ref-smith2020))
+#   Multi:   ([Smith, 2020](#ref-smith2020). [Jones, 2019](#ref-jones2019))
+# Match individual [text](#anchor) links anywhere so both forms are handled.
+_MD_CITE_LINK_RE = re.compile(r'\[([^\]]+)\]\(#[^)]+\)')
+
+
+def clean_citation_markup(text: str) -> str:
+    """Strip HTML anchor tags and markdown citation links from *text*.
+
+    Must be called on humanized_text before all DOCX export passes so that
+    the APA and citation regexes only see plain text.
+
+    - ``<a id="ref-..."></a>`` anchors → removed
+    - ``[Name, Year](#ref-...)`` markdown links → ``Name, Year`` (link stripped,
+      text kept; outer parentheses from the surrounding prose are preserved)
+    """
+    text = _HTML_ANCHOR_RE.sub("", text)
+    text = _MD_CITE_LINK_RE.sub(r"\1", text)
+    return text
+
+
 def _make_bookmark_id(line: str, existing: dict[str, str]) -> str:
     """Derive a ``ref_lastname_year`` bookmark id from an APA reference line.
 

@@ -49,7 +49,8 @@ export interface Candidate {
 
 export interface ProfileSummary {
   name: string;
-  path: string;
+  dialect: string;
+  is_bundled: boolean;
 }
 
 // ---------------------------------------------------------------------------

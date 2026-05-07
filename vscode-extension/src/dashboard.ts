@@ -25,6 +25,7 @@ import {
   ReadabilityResult,
   CitationsResult,
 } from "./daemonClient";
+import { getLastMarkdownEditor } from "./activeEditorTracker";
 
 const HISTORY_KEY = "humanizer.scoreHistory";
 const HISTORY_CAP = 30;
@@ -81,7 +82,7 @@ async function _kickRefresh(): Promise<void> {
     return;
   }
   const ctx = _ctx;
-  const editor = vscode.window.activeTextEditor;
+  const editor = getLastMarkdownEditor() ?? vscode.window.activeTextEditor;
   if (!editor || editor.document.languageId !== "markdown") {
     _panel.webview.postMessage({
       type: "data",

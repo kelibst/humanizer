@@ -38,6 +38,7 @@ class GeminiBackend:
 
     def _model_handle(self, system: str, model_name: str):
         try:
+            # TODO(v1.7): migrate to google.genai — see FutureWarning above
             import google.generativeai as genai  # type: ignore
         except ImportError as exc:  # pragma: no cover - dep is in pyproject
             raise BackendUnavailable(f"google-generativeai SDK not installed: {exc}") from exc

@@ -4,7 +4,7 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
-from ._bookmarks import _build_reference_bookmarks
+from ._bookmarks import _build_reference_bookmarks, clean_citation_markup
 from ._hyperlinks import _embed_citation_hyperlinks
 
 
@@ -48,6 +48,10 @@ def write_docx(original_path: Path, humanized_text: str, output_path: Path) -> N
     """
     Document = _get_require_docx()()
     doc = Document(str(original_path))
+
+    # Strip markdown/HTML citation markup (HTML anchors and markdown links)
+    # so that the APA and citation regexes in Passes 2 and 3 see plain text.
+    humanized_text = clean_citation_markup(humanized_text)
 
     # Skip markdown headings (lines starting with '#') when mapping humanized
     # text back onto DOCX paragraph slots.  Headings exist in markdown but have
