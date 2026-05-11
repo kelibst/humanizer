@@ -8,6 +8,7 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.healthCheck = healthCheck;
 exports.exportDocxToFile = exportDocxToFile;
+exports.exportPdfToFile = exportPdfToFile;
 exports.scoreText = scoreText;
 exports.transformText = transformText;
 exports.suggestText = suggestText;
@@ -27,6 +28,15 @@ async function healthCheck() {
  */
 async function exportDocxToFile(text, outputPath) {
     await (0, transport_1._post)("/v1/export/docx", {
+        text,
+        output_path: outputPath,
+    });
+}
+/**
+ * POST /v1/export/pdf — write text as a linked PDF (via LibreOffice/pandoc on the daemon host).
+ */
+async function exportPdfToFile(text, outputPath) {
+    await (0, transport_1._post)("/v1/export/pdf", {
         text,
         output_path: outputPath,
     });

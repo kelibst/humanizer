@@ -30,6 +30,16 @@ export async function exportDocxToFile(text: string, outputPath: string): Promis
 }
 
 /**
+ * POST /v1/export/pdf — write text as a linked PDF (via LibreOffice/pandoc on the daemon host).
+ */
+export async function exportPdfToFile(text: string, outputPath: string): Promise<void> {
+  await _post<{ ok: boolean; path: string }>("/v1/export/pdf", {
+    text,
+    output_path: outputPath,
+  });
+}
+
+/**
  * POST /v1/score — score text for AI-risk.
  */
 export async function scoreText(text: string, profile?: string): Promise<ScoreResult> {

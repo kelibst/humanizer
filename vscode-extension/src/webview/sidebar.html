@@ -22,7 +22,8 @@
     <!-- Daemon status bar -->
     <div id="hz-status" class="hz-status hz-status--idle">
       <span id="hz-status-dot" class="hz-dot"></span>
-      <span id="hz-status-text">Ready — open a .md file to start</span>
+      <span id="hz-status-text">Ready —&nbsp;</span>
+      <button id="hz-open-file-btn" class="hz-open-file-link">open a .md file</button>
     </div>
 
     <!-- Welcome cards (v1.4) — hidden by default, shown on first launch -->
@@ -79,10 +80,14 @@
         Suggest 3
       </button>
 
-      <!-- v1.4 — Export button -->
+      <!-- v1.4 — Export buttons -->
       <button id="hz-export-btn" class="hz-btn hz-btn--secondary"
               title="Export the active file to <stem>_humanized.docx">
         Export to .docx
+      </button>
+      <button id="hz-export-pdf-btn" class="hz-btn hz-btn--secondary"
+              title="Export the active file to <stem>_humanized.pdf (requires LibreOffice or pandoc)">
+        Export to PDF
       </button>
     </section>
 
@@ -332,12 +337,29 @@
       vscode.postMessage({ type: 'suggest' });
     });
 
+    // Open-file link in the status bar
+    const _openFileBtn = el('hz-open-file-btn');
+    if (_openFileBtn) {
+      _openFileBtn.addEventListener('click', () => {
+        vscode.postMessage({ type: 'openMdFile' });
+      });
+    }
+
     // v1.4 — Export to .docx button (delegates to humanizer.exportDocx command)
     const _exportBtn = el('hz-export-btn');
     if (_exportBtn) {
       _exportBtn.addEventListener('click', () => {
         setStatus('busy', 'Exporting to .docx…');
         vscode.postMessage({ type: 'exportDocx' });
+      });
+    }
+
+    // v1.6 — Export to PDF button (delegates to humanizer.exportPdf command)
+    const _exportPdfBtn = el('hz-export-pdf-btn');
+    if (_exportPdfBtn) {
+      _exportPdfBtn.addEventListener('click', () => {
+        setStatus('busy', 'Exporting to PDF…');
+        vscode.postMessage({ type: 'exportPdf' });
       });
     }
 

@@ -47,6 +47,7 @@ export type {
 export {
   healthCheck,
   exportDocxToFile,
+  exportPdfToFile,
   scoreText,
   transformText,
   suggestText,

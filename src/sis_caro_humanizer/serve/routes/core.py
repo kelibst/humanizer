@@ -19,7 +19,7 @@ from ..helpers import (
     _to_jsonable,
 )
 from ..models.v12 import ScoreBody, SuggestBody, TransformBody
-from ..models.v156 import ExportDocxBody
+from ..models.v156 import ExportDocxBody, ExportPdfBody
 
 VERSION = "1.5.0"
 
@@ -59,6 +59,30 @@ def make_router(
             ) from exc
         try:
             new_docx_from_markdown(body.text, Path(body.output_path))
+        except Exception as exc:
+            raise HTTPException(
+                status_code=500,
+                detail={"error": "export_failed", "detail": str(exc)},
+            ) from exc
+        return {"ok": True, "path": body.output_path}
+
+    @router.post("/v1/export/pdf")
+    async def export_pdf(body: ExportPdfBody, _: None = auth_dep) -> dict[str, Any]:
+        """Write *text* as a linked PDF via LibreOffice or pandoc."""
+        try:
+            from ...docx_bridge import export_as_pdf
+        except ImportError as exc:
+            raise HTTPException(
+                status_code=400,
+                detail={"error": "dependency_missing", "detail": str(exc)},
+            ) from exc
+        try:
+            export_as_pdf(body.text, Path(body.output_path))
+        except RuntimeError as exc:
+            raise HTTPException(
+                status_code=400,
+                detail={"error": "tool_missing", "detail": str(exc)},
+            ) from exc
         except Exception as exc:
             raise HTTPException(
                 status_code=500,

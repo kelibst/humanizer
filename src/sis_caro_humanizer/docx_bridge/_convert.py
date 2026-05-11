@@ -1,7 +1,10 @@
-"""_convert.py — new_docx_from_markdown: create a .docx from markdown text."""
+"""_convert.py — new_docx_from_markdown / export_as_pdf: create docs from markdown."""
 from __future__ import annotations
 
 import re
+import subprocess
+import shutil
+import tempfile
 from pathlib import Path
 
 from ._guard import _require_docx
@@ -53,3 +56,47 @@ def new_docx_from_markdown(humanized_text: str, output_path: Path) -> None:
     bookmark_map = _build_reference_bookmarks(doc, humanized_text)
     _embed_citation_hyperlinks(doc, bookmark_map)
     doc.save(str(output_path))
+
+
+def export_as_pdf(humanized_text: str, output_path: Path) -> str:
+    """Create a fully-linked DOCX then convert it to PDF.
+
+    Tries LibreOffice headless first, then pandoc. Raises ``RuntimeError``
+    if neither tool is on PATH. Returns the path of the produced PDF as a
+    string.
+    """
+    with tempfile.NamedTemporaryFile(suffix=".docx", delete=False) as tf:
+        docx_path = Path(tf.name)
+
+    try:
+        new_docx_from_markdown(humanized_text, docx_path)
+
+        if shutil.which("libreoffice"):
+            subprocess.run(
+                [
+                    "libreoffice", "--headless", "--convert-to", "pdf",
+                    "--outdir", str(output_path.parent), str(docx_path),
+                ],
+                check=True,
+                timeout=120,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+            lo_out = output_path.parent / (docx_path.stem + ".pdf")
+            if lo_out.exists() and lo_out != output_path:
+                lo_out.rename(output_path)
+        elif shutil.which("pandoc"):
+            subprocess.run(
+                ["pandoc", str(docx_path), "-o", str(output_path)],
+                check=True,
+                timeout=120,
+            )
+        else:
+            raise RuntimeError(
+                "Neither LibreOffice nor pandoc is installed. "
+                "Install one (e.g. 'sudo apt install libreoffice') to enable PDF export."
+            )
+    finally:
+        docx_path.unlink(missing_ok=True)
+
+    return str(output_path)

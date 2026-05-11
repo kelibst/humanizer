@@ -10,12 +10,13 @@
  * updating plan/VS_CODE_EXTENSION_CONTRACT.md §1.
  */
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.benchmark = exports.reviewImport = exports.transformTextStream = exports.batchStubOrphans = exports.exportBibtex = exports.importBibtex = exports.doiLookup = exports.llmRun = exports.reviewer = exports.inspect = exports.renderPrompt = exports.listTemplates = exports.deleteRef = exports.upsertRef = exports.listRefs = exports.citations = exports.readability = exports.checklist = exports.lintText = exports.listProfiles = exports.suggestText = exports.transformText = exports.scoreText = exports.exportDocxToFile = exports.healthCheck = exports.DaemonError = void 0;
+exports.benchmark = exports.reviewImport = exports.transformTextStream = exports.batchStubOrphans = exports.exportBibtex = exports.importBibtex = exports.doiLookup = exports.llmRun = exports.reviewer = exports.inspect = exports.renderPrompt = exports.listTemplates = exports.deleteRef = exports.upsertRef = exports.listRefs = exports.citations = exports.readability = exports.checklist = exports.lintText = exports.listProfiles = exports.suggestText = exports.transformText = exports.scoreText = exports.exportPdfToFile = exports.exportDocxToFile = exports.healthCheck = exports.DaemonError = void 0;
 var types_1 = require("./daemon/types");
 Object.defineProperty(exports, "DaemonError", { enumerable: true, get: function () { return types_1.DaemonError; } });
 var core_1 = require("./daemon/core");
 Object.defineProperty(exports, "healthCheck", { enumerable: true, get: function () { return core_1.healthCheck; } });
 Object.defineProperty(exports, "exportDocxToFile", { enumerable: true, get: function () { return core_1.exportDocxToFile; } });
+Object.defineProperty(exports, "exportPdfToFile", { enumerable: true, get: function () { return core_1.exportPdfToFile; } });
 Object.defineProperty(exports, "scoreText", { enumerable: true, get: function () { return core_1.scoreText; } });
 Object.defineProperty(exports, "transformText", { enumerable: true, get: function () { return core_1.transformText; } });
 Object.defineProperty(exports, "suggestText", { enumerable: true, get: function () { return core_1.suggestText; } });

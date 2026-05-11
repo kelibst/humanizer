@@ -19,7 +19,7 @@ from __future__ import annotations
 
 from ._guard import _require_docx
 from ._core import extract_text, write_docx
-from ._convert import new_docx_from_markdown
+from ._convert import new_docx_from_markdown, export_as_pdf
 from ._tracking import accept_tracked_changes
 from ._comments import extract_word_comments
 from ._diff import diff_text_sections
@@ -31,6 +31,7 @@ __all__ = [
     "extract_text",
     "write_docx",
     "new_docx_from_markdown",
+    "export_as_pdf",
     "accept_tracked_changes",
     "extract_word_comments",
     "diff_text_sections",

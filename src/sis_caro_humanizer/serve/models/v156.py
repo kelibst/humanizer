@@ -40,3 +40,9 @@ class ExportDocxBody(BaseModel):
     model_config = ConfigDict(extra="forbid")
     text: str
     output_path: str
+
+
+class ExportPdfBody(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    text: str
+    output_path: str

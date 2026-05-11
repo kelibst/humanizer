@@ -635,6 +635,57 @@ function registerSectionCommands(ctx) {
             _showError(err);
         }
     }));
+    // ---- humanizer.exportPdf ----
+    ctx.subscriptions.push(vscode.commands.registerCommand("humanizer.exportPdf", async () => {
+        const activeEditor = (0, activeEditorTracker_1.getLastMarkdownEditor)() ?? vscode.window.activeTextEditor;
+        const defaultUri = activeEditor
+            ? vscode.Uri.file(path.dirname(activeEditor.document.uri.fsPath))
+            : vscode.workspace.workspaceFolders?.[0]?.uri;
+        const picked = await vscode.window.showOpenDialog({
+            canSelectMany: false,
+            filters: { Markdown: ["md"] },
+            defaultUri,
+            openLabel: "Export to PDF",
+        });
+        if (!picked || picked.length === 0) {
+            return;
+        }
+        const inputPath = picked[0].fsPath;
+        const dir = path.dirname(inputPath);
+        const stem = path.basename(inputPath, path.extname(inputPath));
+        const outputPath = path.join(dir, `${stem}_humanized.pdf`);
+        const cfg = _cfg();
+        try {
+            await vscode.window.withProgress({
+                location: vscode.ProgressLocation.Notification,
+                title: "Humanizer: exporting to PDF",
+                cancellable: false,
+            }, async (progress) => {
+                progress.report({ increment: 0, message: "reading file…" });
+                const text = fs.readFileSync(inputPath, "utf8");
+                progress.report({ increment: 20, message: "rewriting…" });
+                const result = await (0, daemonClient_1.transformTextStream)(text, { profile: cfg.profile, backend: cfg.backend, stages: ["prescan", "determ", "postscan"] }, (evt) => {
+                    if (evt.type === "stage_done") {
+                        progress.report({ message: `${evt.stage} done` });
+                    }
+                });
+                progress.report({ increment: 60, message: "converting to PDF…" });
+                await (0, daemonClient_1.exportPdfToFile)(result.output, outputPath);
+                progress.report({ increment: 20, message: "done" });
+            });
+            _log(`PDF exported → ${outputPath}`);
+            const action = await vscode.window.showInformationMessage(`Exported to: ${outputPath}`, "Open Folder", "Copy Path");
+            if (action === "Open Folder") {
+                await vscode.commands.executeCommand("revealFileInOS", vscode.Uri.file(outputPath));
+            }
+            else if (action === "Copy Path") {
+                await vscode.env.clipboard.writeText(outputPath);
+            }
+        }
+        catch (err) {
+            _showError(err);
+        }
+    }));
     // ---- humanizer.showProgress ----
     ctx.subscriptions.push(vscode.commands.registerCommand("humanizer.showProgress", async () => {
         // Focus the section tree view (CONTRACT §showProgress logic)

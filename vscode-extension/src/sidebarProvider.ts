@@ -160,6 +160,24 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
         await this._onApplyCandidate(msg.text ?? "");
         break;
 
+      case "openMdFile": {
+        const folders = vscode.workspace.workspaceFolders;
+        const defaultUri = folders?.[0]?.uri;
+        const picked = await vscode.window.showOpenDialog({
+          canSelectMany: false,
+          canSelectFiles: true,
+          canSelectFolders: false,
+          filters: { Markdown: ["md"] },
+          defaultUri,
+          openLabel: "Open",
+        });
+        if (picked && picked.length > 0) {
+          const doc = await vscode.workspace.openTextDocument(picked[0]);
+          await vscode.window.showTextDocument(doc);
+        }
+        break;
+      }
+
       case "openSettings":
         vscode.commands.executeCommand("humanizer.openSettings");
         break;
@@ -167,6 +185,10 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
       // v1.4 — convenience routings from the sidebar webview.
       case "exportDocx":
         vscode.commands.executeCommand("humanizer.exportDocx");
+        break;
+
+      case "exportPdf":
+        vscode.commands.executeCommand("humanizer.exportPdf");
         break;
 
       case "openDashboard":

@@ -11,7 +11,7 @@ from ._guard import _require_docx  # noqa: F401  (available for callers that nee
 
 # Regex: first line of a typical APA reference (starts with capital, contains
 # a 4-digit year in parentheses somewhere on the line).
-_APA_LINE_RE = re.compile(r"^[A-Z][a-z].*\(\d{4}\)")
+_APA_LINE_RE = re.compile(r"^[A-Z][\w\-'].*\(\d{4}\)")
 
 # Regex: extract last name (first word) and year from an APA line.
 _APA_KEY_RE = re.compile(r"^([A-Za-z][\w\-']+).*\((\d{4})\)")
