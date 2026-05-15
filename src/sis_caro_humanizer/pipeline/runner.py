@@ -183,7 +183,8 @@ def run_pipeline(
     if "prescan" in active:
         _emit(on_event, ("stage_start", "prescan"))
         t0 = time.monotonic()
-        pre = prescan(current, profile)
+        pre, prescan_notes = prescan(current, profile)
+        notes.extend(prescan_notes)
         _emit(on_event, ("stage_done", "prescan", time.monotonic() - t0))
 
     if "llm" in active:
@@ -243,8 +244,10 @@ def run_pipeline(
     # populated ScoreReport. If neither ran, fall back to scoring once on the
     # un-mutated input/output so PipelineResult invariants hold.
     if pre is None and post is None:
-        pre = prescan(text, profile)
-        post = prescan(current, profile)
+        pre, pre_notes = prescan(text, profile)
+        notes.extend(pre_notes)
+        post, post_notes = prescan(current, profile)
+        notes.extend(post_notes)
     elif pre is None:
         pre = post  # type: ignore[assignment]
     elif post is None:

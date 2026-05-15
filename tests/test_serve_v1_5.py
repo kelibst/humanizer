@@ -310,3 +310,59 @@ def test_transform_stream_returns_sse(client):
     done = next(f for f in frames if f["type"] == "done")
     assert done["output"] == "hello world"
     assert done["llm_used"] is False
+
+
+# ---------------------------------------------------------------------------
+# POST /v1/score/external
+# ---------------------------------------------------------------------------
+
+
+def test_score_external_requires_auth(client):
+    r = client.post("/v1/score/external", json={"text": "hello"})
+    assert r.status_code == 401
+
+
+def test_score_external_mocked_success(client, monkeypatch):
+    """All three detectors return a result; route returns results list."""
+    from sis_caro_humanizer.scoring.external import DetectorResult
+
+    def _fake_get_detector(name):
+        class _D:
+            def detect(self, text, *, timeout=8.0):
+                return DetectorResult(score=0.75, band="high")
+        return _D()
+
+    import sis_caro_humanizer.serve.routes.core as core_mod
+    monkeypatch.setattr(
+        "sis_caro_humanizer.scoring.external.get_detector",
+        _fake_get_detector,
+    )
+    r = client.post("/v1/score/external", json={"text": "We delve."}, headers=HDRS)
+    assert r.status_code == 200
+    body = r.json()
+    assert "results" in body
+    # All three known detectors queried by default
+    assert len(body["results"]) == 3
+    for row in body["results"]:
+        assert row["score"] == pytest.approx(0.75)
+        assert row["band"] == "high"
+
+
+def test_score_external_detector_failure_returns_error_field(client, monkeypatch):
+    """When a detector raises DetectorUnavailable, the row has an 'error' key."""
+    from sis_caro_humanizer.scoring.external import DetectorUnavailable
+
+    def _bad_detector(name):
+        class _D:
+            def detect(self, text, *, timeout=8.0):
+                raise DetectorUnavailable("rate_limited")
+        return _D()
+
+    monkeypatch.setattr(
+        "sis_caro_humanizer.scoring.external.get_detector",
+        _bad_detector,
+    )
+    r = client.post("/v1/score/external", json={"text": "hello world"}, headers=HDRS)
+    assert r.status_code == 200
+    body = r.json()
+    assert all("error" in row for row in body["results"])

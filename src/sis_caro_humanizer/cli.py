@@ -30,6 +30,7 @@ from .config import DEFAULT_MODEL
 from .ollama_client import ensure_model, is_running, list_models
 from .pipeline.runner import ALL_STAGES, run_pipeline
 from .reporting.report import render_check, render_grammar, render_transform
+from .scoring.external import KNOWN_DETECTORS
 from .scoring.risk import ai_risk_score
 
 app = typer.Typer(
@@ -131,6 +132,26 @@ def doctor() -> None:
         proselint_note = f"import failed: {exc}"
     row("proselint", proselint_ok, proselint_note)
 
+    # --- External AI detectors (optional; used by `humanize check --external`) ---
+    import os
+    _DETECTOR_KEYS = {
+        "GPTZero": "GPTZERO_API_KEY",
+        "Sapling": "SAPLING_API_KEY",
+        "ZeroGPT": "ZEROGPT_API_KEY",
+    }
+    for display_name, env_var in _DETECTOR_KEYS.items():
+        key_set = bool(os.environ.get(env_var, "").strip())
+        # GPTZero has a keyless free tier; the others require a key.
+        if display_name == "GPTZero":
+            note = env_var if key_set else f"{env_var} not set (keyless free tier still works)"
+            row(f"{display_name} (external)", True, note)
+        else:
+            row(
+                f"{display_name} (external)",
+                key_set,
+                env_var if key_set else f"set {env_var} to enable",
+            )
+
     _console.print(table)
 
 
@@ -145,15 +166,124 @@ def check(
     profile: str | None = typer.Option(None, "--profile", "-p", help="Profile name or path."),
     why: bool = typer.Option(False, "--why", help="Show feature breakdown."),
     json_out: bool = typer.Option(False, "--json", help="Emit JSON instead of a table."),
+    external: bool = typer.Option(
+        False,
+        "--external",
+        help="Also call public AI-detectors (best-effort, opt-in). Useful to cross-validate the internal score.",
+    ),
+    detectors: str = typer.Option(
+        ",".join(KNOWN_DETECTORS),
+        "--detectors",
+        help="Comma-separated detector names (gptzero, sapling, zerogpt).",
+    ),
 ) -> None:
-    """Score a file's AI-risk."""
+    """Score a file's AI-risk.
+
+    Use --external to cross-validate against online detectors (GPTZero,
+    Sapling, ZeroGPT). GPTZero works without an API key (rate-limited);
+    the others need their env-var keys set (see `humanize doctor`).
+    """
+    import time as _time
+    from .scoring.external import DetectorUnavailable, get_detector
+
     text = _read_input(input)
     prof = _load_profile_or(False, profile)
     report = ai_risk_score(text, prof)
-    if json_out:
+
+    # Check if perplexity was unavailable and warn the user (stderr so JSON stays clean).
+    _stderr = Console(stderr=True)
+    for c in report.components:
+        if c.name == "perplexity" and "perplexity_unavailable" in c.examples:
+            _stderr.print(
+                "[yellow]warning:[/yellow] perplexity feature unavailable "
+                "(Ollama not running / DistilGPT2 not installed). "
+                "Score may be under-estimated. Run [bold]humanize doctor[/bold] for details."
+            )
+            break
+
+    if json_out and not external:
         typer.echo(json.dumps(_to_jsonable(report), indent=2))
         return
+    if not external:
+        render_check(report, console=_console, why=why)
+        return
+
+    # --- External cross-validation ---
+    names = [d.strip() for d in detectors.split(",") if d.strip()]
+    unknown = [n for n in names if n not in KNOWN_DETECTORS]
+    if unknown:
+        _console.print(
+            f"[red]unknown detector(s):[/red] {', '.join(unknown)} "
+            f"(known: {', '.join(KNOWN_DETECTORS)})"
+        )
+        raise typer.Exit(code=2)
+
+    from rich.table import Table as _Table
+    from rich.text import Text as _Text
+
+    _BAND_STYLE = {"low": "bold green", "medium": "bold yellow", "high": "bold red"}
+
+    ext_rows: list[dict] = []
+    for name in names:
+        row_data: dict = {"detector": name}
+        t0 = _time.monotonic()
+        try:
+            det = get_detector(name)
+            url = getattr(det, "URL", "?")
+            Console(stderr=True).print(f"[dim]check: querying {url} …[/dim]")
+            res = det.detect(text, timeout=8.0)
+            row_data["score"] = res.score
+            row_data["band"] = res.band
+            row_data["elapsed"] = _time.monotonic() - t0
+        except DetectorUnavailable as exc:
+            row_data["error"] = str(exc)
+        except Exception as exc:  # noqa: BLE001
+            row_data["error"] = f"internal: {exc}"
+        ext_rows.append(row_data)
+
+    if json_out:
+        payload = {
+            "input_path": str(input),
+            "humanizer": _to_jsonable(report),
+            "external": ext_rows,
+        }
+        typer.echo(json.dumps(payload, indent=2))
+        return
+
+    # Render internal score first.
     render_check(report, console=_console, why=why)
+
+    # Then render the cross-validation table.
+    tbl = _Table(title="External AI-detector comparison", show_header=True, header_style="bold")
+    tbl.add_column("Detector")
+    tbl.add_column("Score", justify="right")
+    tbl.add_column("Band")
+    tbl.add_column("Latency", justify="right")
+
+    # Humanizer internal row first.
+    tbl.add_row(
+        "humanizer (internal)",
+        f"{report.score:.3f}",
+        _Text(report.band.upper(), style=_BAND_STYLE.get(report.band, "bold")),
+        "–",
+    )
+    for row_data in ext_rows:
+        if "error" in row_data:
+            tbl.add_row(
+                row_data["detector"],
+                f"(unavailable: {row_data['error']})",
+                "–",
+                "–",
+            )
+        else:
+            band = row_data["band"]
+            tbl.add_row(
+                row_data["detector"],
+                f"{row_data['score']:.3f}",
+                _Text(band.upper(), style=_BAND_STYLE.get(band, "bold")),
+                f"{row_data['elapsed']:.2f}s",
+            )
+    _console.print(tbl)
 
 
 def _parse_stages(value: str) -> tuple[str, ...]:
@@ -259,10 +389,89 @@ def grammar(
 
 
 @app.command()
-def calibrate() -> None:
-    """Reserved for v0.2."""
-    _console.print("calibrate not implemented in v0.1")
-    raise typer.Exit(code=0)
+def calibrate(
+    human: list[Path] = typer.Option(
+        None,
+        "--human",
+        help="Path to a known-human-written text file. Repeat for multiple files.",
+    ),
+    ai: list[Path] = typer.Option(
+        None,
+        "--ai",
+        help="Path to a known-AI-generated text file. Repeat for multiple files.",
+    ),
+    profile: str | None = typer.Option(None, "--profile", "-p", help="Profile name or path."),
+    dry_run: bool = typer.Option(
+        False, "--dry-run", help="Compute anchors but do NOT write calibration.toml."
+    ),
+) -> None:
+    """Calibrate perplexity scoring anchors from your own sample files.
+
+    Provide at least one --human and one --ai file.  The wizard scores each
+    file and proposes updated LOW_PPL / HIGH_PPL anchors that it writes to
+    ~/.config/humanizer/calibration.toml.  Those anchors are loaded
+    automatically by `humanize check` on the next run.
+
+    When run with no arguments, the wizard prompts you interactively.
+    """
+    from .calibrate import run_wizard
+
+    human_paths = list(human or [])
+    ai_paths = list(ai or [])
+
+    # Interactive prompting when no files provided
+    if not human_paths:
+        _console.print(
+            "[bold]No --human file provided.[/bold] Enter the path to one or more "
+            "human-written text files, one per line. Press Enter on a blank line when done."
+        )
+        while True:
+            raw = input("  human file> ").strip()
+            if not raw:
+                break
+            p = Path(raw)
+            if not p.exists():
+                _console.print(f"[red]File not found:[/red] {p}")
+            else:
+                human_paths.append(p)
+
+    if not ai_paths:
+        _console.print(
+            "[bold]No --ai file provided.[/bold] Enter the path to one or more "
+            "AI-generated text files, one per line. Press Enter on a blank line when done."
+        )
+        while True:
+            raw = input("  AI file> ").strip()
+            if not raw:
+                break
+            p = Path(raw)
+            if not p.exists():
+                _console.print(f"[red]File not found:[/red] {p}")
+            else:
+                ai_paths.append(p)
+
+    if not human_paths or not ai_paths:
+        _console.print(
+            "[red]Calibration requires at least one human and one AI sample.[/red]\n"
+            "Usage: humanize calibrate --human myessay.txt --ai aiparagraph.txt"
+        )
+        raise typer.Exit(code=2)
+
+    # Validate that all files exist
+    for p in human_paths + ai_paths:
+        if not p.exists():
+            _console.print(f"[red]File not found:[/red] {p}")
+            raise typer.Exit(code=2)
+
+    prof = _load_profile_or(False, profile)
+
+    run_wizard(
+        human_paths=human_paths,
+        ai_paths=ai_paths,
+        profile=prof,
+        console=_console,
+        dry_run=dry_run,
+    )
 
 
 # ---------------------------------------------------------------------------

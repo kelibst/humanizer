@@ -35,6 +35,8 @@ _LOG = logging.getLogger(__name__)
 
 
 # Calibration anchors (CONTRACT §3.4). Lower is more AI-like.
+# These are the *default* anchors; users can override them by running
+# ``humanize calibrate``, which writes ``~/.config/humanizer/calibration.toml``.
 LOW_PPL = 2.4
 HIGH_PPL = 5.5
 PERPLEXITY_WEIGHT = 0.36
@@ -51,6 +53,24 @@ _FALLBACK_FAILED = False
 # that need to reset this can ``monkeypatch.setattr(perplexity_module,
 # "_OLLAMA_LATCHED", False)``.
 _OLLAMA_LATCHED = False
+
+# User-level calibration anchors cached at process level.
+# Populated on first call to _effective_anchors().
+_USER_ANCHORS: dict[str, float] | None = None
+
+
+def _effective_anchors() -> tuple[float, float]:
+    """Return (LOW_PPL, HIGH_PPL) from user calibration.toml if present, else defaults."""
+    global _USER_ANCHORS
+    if _USER_ANCHORS is None:
+        try:
+            from ..calibrate import load_calibration
+            _USER_ANCHORS = load_calibration()
+        except Exception:  # noqa: BLE001 - never crash scoring
+            _USER_ANCHORS = {}
+    low = _USER_ANCHORS.get("LOW_PPL", LOW_PPL)
+    high = _USER_ANCHORS.get("HIGH_PPL", HIGH_PPL)
+    return float(low), float(high)
 
 
 class LogprobsNotSupported(Exception):
@@ -159,9 +179,10 @@ def _distilgpt2_xent(text: str) -> float | None:
 
 
 def _xent_to_value(mean_xent: float) -> float:
-    if HIGH_PPL <= LOW_PPL:
+    low, high = _effective_anchors()
+    if high <= low:
         return 0.0
-    raw = 1.0 - (mean_xent - LOW_PPL) / (HIGH_PPL - LOW_PPL)
+    raw = 1.0 - (mean_xent - low) / (high - low)
     return max(0.0, min(1.0, raw))
 
 

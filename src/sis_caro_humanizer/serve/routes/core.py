@@ -1,4 +1,4 @@
-"""/health, /profiles, /export/docx, /score, /transform, /suggest routes."""
+"""/health, /profiles, /export/docx, /score, /score/external, /transform, /suggest routes."""
 from __future__ import annotations
 
 import time
@@ -21,7 +21,7 @@ from ..helpers import (
 from ..models.v12 import ScoreBody, SuggestBody, TransformBody
 from ..models.v156 import ExportDocxBody, ExportPdfBody
 
-VERSION = "1.5.0"
+VERSION = "1.6.0"
 
 
 def make_router(
@@ -101,6 +101,46 @@ def make_router(
             ) from exc
         report = score_runner(body.text, prof)
         return _to_jsonable(report)
+
+    @router.post("/v1/score/external")
+    async def score_external(body: ScoreBody, _: None = auth_dep) -> dict[str, Any]:
+        """Cross-validate ``body.text`` against the configured external AI detectors.
+
+        Runs up to 3 detectors concurrently. Each result is ``{detector, score,
+        band}`` on success, ``{detector, error}`` on failure. Never raises for
+        individual detector failures — callers should treat errors as
+        ``not_available`` rather than hard failures.
+
+        Passing ``detectors`` in the body (comma-separated) filters which
+        detectors to query; omit to query all three.
+        """
+        from ...scoring.external import KNOWN_DETECTORS, DetectorUnavailable, get_detector
+        import logging
+        _log = logging.getLogger(__name__)
+
+        names = getattr(body, "detectors", None)
+        if isinstance(names, str):
+            names = [d.strip() for d in names.split(",") if d.strip()]
+        if not names:
+            names = list(KNOWN_DETECTORS)
+
+        def _call_one(name: str) -> dict[str, Any]:
+            row: dict[str, Any] = {"detector": name}
+            try:
+                det = get_detector(name)
+                _log.info("score/external: querying %s", getattr(det, "URL", name))
+                res = det.detect(body.text, timeout=8.0)
+                row["score"] = res.score
+                row["band"] = res.band
+            except DetectorUnavailable as exc:
+                row["error"] = str(exc)
+            except Exception as exc:  # noqa: BLE001
+                row["error"] = f"internal: {exc}"
+            return row
+
+        with ThreadPoolExecutor(max_workers=min(3, len(names))) as ex:
+            results = list(ex.map(_call_one, names))
+        return {"results": results}
 
     @router.post("/v1/transform")
     async def transform(body: TransformBody, _: None = auth_dep) -> dict[str, Any]:

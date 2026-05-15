@@ -28,8 +28,10 @@ from .routes.core import make_router as _make_core_router
 from .routes.research import make_router as _make_research_router
 from .routes.review import make_router as _make_review_router
 from .routes.streaming import make_router as _make_streaming_router
+from .routes.zotero import make_router as _make_zotero_router
+from .routes.advanced import make_router as _make_voice_diff_router
 
-VERSION = "1.5.0"
+VERSION = "1.6.0"
 
 ALLOWED_ORIGINS = ("https://docs.google.com", "https://script.google.com")
 
@@ -95,6 +97,8 @@ def create_app(
     app.include_router(_make_citations_mgmt_router(auth_dep))
     app.include_router(_make_review_router(score_runner, auth_dep))
     app.include_router(_make_streaming_router(pipeline_runner, _executor, auth_dep))
+    app.include_router(_make_zotero_router(auth_dep))
+    app.include_router(_make_voice_diff_router(auth_dep))
 
     return app
 
